@@ -11,29 +11,29 @@ x-environment: &airflow_environment # создание шаблона списк
   - AIRFLOW__WEBSERVER__EXPOSE_CONFIG=True # разрешает смотреть конфигурацию Airflow в Web UI
 x-airflow-image: &airflow_image apache/airflow:2.7.3-python3.8
 # ====================================== /AIRFLOW ENVIRONMENT VARIABLES ======================================
-services:
+services: # описание контейнеров
   postgres:
-    image: postgres:12-alpine
-    environment:
+    image: postgres:12-alpine # образ
+    environment: # переменные окружения
       - POSTGRES_USER=airflow
       - POSTGRES_PASSWORD=airflow
       - POSTGRES_DB=airflow
     ports:
       - "5432:5432"
-  init:
-    build:
-      context: ./docker/airflow
+  init: # сервис однократной инициализации Airflow
+    build: # сборка собственного образа
+      context: ./docker/airflow # папка, где лежит Dockerfile
       args:
-        AIRFLOW_BASE_IMAGE: *airflow_image
-    image: manning-airflow/airflow
-    depends_on:
+        AIRFLOW_BASE_IMAGE: *airflow_image # передаёт базовый образ Airflow в Dockerfile
+    image: manning-airflow/airflow # имя итогового Docker-образа
+    depends_on: # старт только после postgres
       - postgres
     env_file:
       - .env
-    environment: *airflow_environment
-    entrypoint: /bin/bash
+    environment: *airflow_environment # использует все переменные окружения airflow
+    entrypoint: /bin/bash # переопределяет стандартную точку входа
     command: -c 'airflow db upgrade && sleep 5 && airflow users create --username admin --password admin --firstname Anonymous --lastname Admin --role Admin --email admin@example.org'
-  webserver:
+  webserver: # контейниер с UI Airflow
     build:
       context: ./docker/airflow
       args:
@@ -44,14 +44,14 @@ services:
       - postgres
     ports:
       - "8080:8080"
-    volumes:
+    volumes: # монтирует даги с хоста на контейнер
       - ./airflow/dags:/opt/airflow/dags
       - logs:/opt/airflow/logs
     env_file:
       - .env
     environment: *airflow_environment
     command: webserver
-  scheduler:
+  scheduler: # контейнер для планировщика
     build:
       context: ./docker/airflow
       args:
@@ -63,7 +63,7 @@ services:
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - data:/opt/airflow/data
-      - logs:/opt/airflow/logs
+      - logs:/opt/airflow/logs # общие логи с webserver
     env_file:
       - .env
     environment: *airflow_environment
