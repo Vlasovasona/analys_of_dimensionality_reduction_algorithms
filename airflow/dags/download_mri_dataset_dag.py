@@ -1,18 +1,15 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from airflow.operators.bash import BashOperator
 from airflow.utils.dates import days_ago
-from PIL import Image
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 import numpy as np
-from collections import defaultdict
 import os
 import kagglehub
 import shutil
 import cv2
 import json
-from collections import defaultdict
 import io
+
 
 BUCKET_NAME = "mri-dataset"
 DATA_DIR = "/opt/airflow/data/raw/mri_images"
@@ -25,8 +22,9 @@ PROCESSED_PREFIX = "mri/processed/"
 BATCH_SIZE = 128
 TMP_DIR = "/tmp/mri_batches"
 
+
 def _download_mri_dataset():
-    """Загрузка датасета МРТ головного мозга"""
+    """Загрузка датасета МРТ головного мозга из Kaggle в локальное хранилище"""
     path = kagglehub.dataset_download(
         "fernando2rad/brain-tumor-mri-images-44c"
     )
@@ -42,7 +40,10 @@ def _download_mri_dataset():
         else:
             shutil.copy2(src, dst)
 
+
 def _upload_images_to_s3():
+    """Загружает необработанные изображения из локального хранилища в бакет S3."""
+
     s3 = S3Hook(aws_conn_id="s3")
 
     for root, _, files in os.walk(DATA_DIR):
@@ -64,10 +65,18 @@ def _upload_images_to_s3():
 
 def _save_batch(X, y, batch_id, s3):
     """
-    X - images,
-    y - labels,
-    batch_id - number of batch
-    s3 - S3Hook object
+    Сохраняет пакет изображений и меток в локальные .npy файлы и загружает их в S3, после чего удаляет локальные файлы.
+
+    params:
+    ----------
+    X : array-like
+        Массив изображений, который нужно сохранить (будет приведён к np.float32)
+    y : array-like
+        Массив меток/классов (будет приведён к np.int64)
+    batch_id : int
+        Номер текущего батча. Используется для именования файлов (X_0001.npy, y_0001.npy)
+    s3 : S3Hook
+        Объект S3Hook для загрузки файлов в указанный S3-bucket
     """
     X = np.asarray(X, dtype=np.float32)
     y = np.asarray(y, dtype=np.int64)
@@ -94,7 +103,10 @@ def _save_batch(X, y, batch_id, s3):
     os.remove(X_path)
     os.remove(y_path)
 
+
 def _preprocess_mri_images():
+    """Нормализация, resize картинок, формирование батчей, загрузка обработанных данных в S3"""
+
     os.makedirs(TMP_DIR, exist_ok=True)
     s3 = S3Hook(aws_conn_id="s3")
 
@@ -145,7 +157,7 @@ def _preprocess_mri_images():
     if batch_X:
         _save_batch(batch_X, batch_y, batch_id, s3)
 
-    # сохранить mapping
+    # сохранить словарь меток
     s3.load_string(
         string_data=json.dumps(class_to_idx),
         key=f"{PROCESSED_PREFIX}class_to_idx.json",
@@ -166,12 +178,12 @@ with DAG(
         python_callable=_download_mri_dataset,
     )
 
-    upload_images_to_s3 = PythonOperator(
+    upload_images_to_s3 = PythonOperator( # оператор для загрузки необработанных данных в хранилище S3
         task_id="upload_images_to_s3",
         python_callable=_upload_images_to_s3,
     )
 
-    preprocess_mri_images = PythonOperator(
+    preprocess_mri_images = PythonOperator( # оператор для обработки "сырых" картинок и загрузки в S3
         task_id="preprocess_mri_images",
         python_callable=_preprocess_mri_images,
     )
