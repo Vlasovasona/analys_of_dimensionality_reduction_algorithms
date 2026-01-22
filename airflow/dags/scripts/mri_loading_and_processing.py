@@ -18,22 +18,22 @@ TMP_DIR = "/tmp/mri_batches"
 def _download_mri_dataset():
     """Скачивание датасета из Kaggle в локальное хранилище"""
     path = kagglehub.dataset_download("fernando2rad/brain-tumor-mri-images-44c")
-    os.makedirs(DATA_DIR, exist_ok=True)
-    for item in os.listdir(path):
-        src = os.path.join(path, item)
-        dst = os.path.join(DATA_DIR, item)
+    os.makedirs(DATA_DIR, exist_ok=True) # создает целевой каталог
+    for item in os.listdir(path): # берет все содержимое скачанного датасета (item - имя элемента, не полный путь)
+        src = os.path.join(path, item) # формирование полного пути
+        dst = os.path.join(DATA_DIR, item) # формирование пути назначения
         if os.path.isdir(src):
-            shutil.copytree(src, dst, dirs_exist_ok=True)
+            shutil.copytree(src, dst, dirs_exist_ok=True) # копирует всю папку целиком
         else:
-            shutil.copy2(src, dst)
+            shutil.copy2(src, dst) # копирует один файл
 
 def _upload_images_to_s3():
     """Загрузка сырых изображений в S3"""
-    s3 = S3Hook(aws_conn_id="s3")
-    for root, _, files in os.walk(DATA_DIR):
+    s3 = S3Hook(aws_conn_id="s3")  # хук получает данные подключения "s3"
+    for root, _, files in os.walk(DATA_DIR): # кортеж (папка, список подпапок, список файлов)
         for file in files:
-            local_path = os.path.join(root, file)
-            s3_key = local_path.replace(DATA_DIR, RAW_PREFIX)
+            local_path = os.path.join(root, file) # формирование абсолютного пути к файлу
+            s3_key = local_path.replace(DATA_DIR, RAW_PREFIX) # путь s3
             s3.load_file(filename=local_path, key=s3_key, bucket_name=BUCKET_NAME, replace=True)
 
 def _save_batch(X, y, batch_id, s3):
