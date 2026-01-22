@@ -2,6 +2,8 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.utils.dates import days_ago
 from scripts.mri_loading_and_processing import _download_mri_dataset, _upload_images_to_s3, _preprocess_mri_images
+from scripts.train_models import _train_model
+
 
 with DAG(
     dag_id="download_brain_tumor_mri_dataset",
@@ -26,4 +28,22 @@ with DAG(
         python_callable=_preprocess_mri_images,
     )
 
-    download_mri_dataset >> upload_images_to_s3 >> preprocess_mri_images
+    train_logreg = PythonOperator(
+        task_id="train_logreg",
+        python_callable=_train_model,
+        op_kwargs={
+            "model_type": "logreg",
+            "pca_components": 128,
+        },
+    )
+
+    train_svm = PythonOperator(
+        task_id="train_svm",
+        python_callable=_train_model,
+        op_kwargs={
+            "model_type": "svm",
+            "pca_components": 128,
+        },
+    )
+
+    download_mri_dataset >> upload_images_to_s3 >> preprocess_mri_images >> [train_logreg, train_svm]
