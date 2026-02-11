@@ -4,7 +4,11 @@ from airflow.operators.python import PythonOperator
 import pendulum
 from scripts.data_extraction.mri import _download_mri_dataset, _upload_images_to_s3, _preprocess_mri_images
 from scripts.train_models import _train_model
-from scripts.classic_dim_algs import _train_dim_model
+from scripts.classic_dim_algs import _train_dim_model, _load_and_concat_targets_from_s3
+
+BUCKET_NAME = "mri-dataset"
+PROCESSED_PREFIX = "mri"
+LOCAL_DATA_DIR = "mri_train_data"
 
 pca_dict = {
     "pca_components": 120,
@@ -60,9 +64,9 @@ with dag:
         op_kwargs={
             "dimensionally_alg_type": "pca",
             "dim_arg_hyperparams": pca_dict,
-            "bucket_name": "mri-dataset",
-            "processed_prefix": 'mri',
-            "local_data_dir": "mri_train_data",
+            "bucket_name": BUCKET_NAME,
+            "processed_prefix": PROCESSED_PREFIX,
+            "local_data_dir": LOCAL_DATA_DIR,
         },
     )
 
@@ -72,9 +76,9 @@ with dag:
         op_kwargs={
             "dimensionally_alg_type": "tsne",
             "dim_arg_hyperparams": tsne_dict,
-            "bucket_name": "mri-dataset",
-            "processed_prefix": 'mri',
-            "local_data_dir": "mri_train_data",
+            "bucket_name": BUCKET_NAME,
+            "processed_prefix": PROCESSED_PREFIX,
+            "local_data_dir": LOCAL_DATA_DIR,
         },
     )
 
@@ -84,13 +88,49 @@ with dag:
         op_kwargs={
             "dimensionally_alg_type": "umap",
             "dim_arg_hyperparams": umap_dict,
-            "bucket_name": "mri-dataset",
-            "processed_prefix": 'mri',
-            "local_data_dir": "mri_train_data",
+            "bucket_name": BUCKET_NAME,
+            "processed_prefix": PROCESSED_PREFIX,
+            "local_data_dir": LOCAL_DATA_DIR,
         },
     )
 
-    # download_mri_dataset >> upload_images_to_s3 >> preprocess_mri_images >> [create_pca >> [train_logreg, train_svm], create_tsne >>  [train_logreg, train_svm], create_umap >> [train_logreg, train_svm], create_TDA >>  [train_logreg, train_svm], train_CNN]
+    concat_y = PythonOperator(
+        task_id="concat_y",
+        python_callable=_load_and_concat_targets_from_s3,
+        op_kwargs={
+            "bucket_name": BUCKET_NAME,
+            "processed_prefix": PROCESSED_PREFIX,
+            "local_data_dir": LOCAL_DATA_DIR,
+        },
+    )
+
+    train_logreg_pca = PythonOperator(
+        task_id="train_logreg_pca",
+        python_callable=_train_model,
+        op_kwargs={
+            "dimensionally_alg_type": "pca",
+            "model_type": "logreg",
+            "bucket_name": BUCKET_NAME,
+            "processed_prefix": PROCESSED_PREFIX,
+            "local_data_dir": LOCAL_DATA_DIR,
+            "mlflow_experiment_name": "mri-brain-tumor",
+            "mlflow_uri": "http://mlflow:5000",
+        },
+    )
+
+    train_svm_pca = PythonOperator(
+        task_id="train_svm_pca",
+        python_callable=_train_model,
+        op_kwargs={
+            "dimensionally_alg_type": "pca",
+            "model_type": "svm",
+            "bucket_name": BUCKET_NAME,
+            "processed_prefix": PROCESSED_PREFIX,
+            "local_data_dir": LOCAL_DATA_DIR,
+            "mlflow_experiment_name": "mri-brain-tumor",
+            "mlflow_uri": "http://mlflow:5000",
+        },
+    )
 
     download_mri_dataset >> upload_images_to_s3 >> preprocess_mri_images
 
@@ -98,11 +138,12 @@ with dag:
         create_pca,
         create_tsne,
         create_umap,
+        concat_y,
         # create_TDA,
         # train_CNN
     ]
 
-    # create_pca >> [train_logreg, train_svm]
+    create_pca >> [train_logreg_pca, train_svm_pca]
     # create_tsne >> [train_logreg, train_svm]
     # create_umap >> [train_logreg, train_svm]
     # create_TDA >> [train_logreg, train_svm]

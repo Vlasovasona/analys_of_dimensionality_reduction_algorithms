@@ -59,6 +59,48 @@ def load_data_from_s3(bucket_name,
 
     return X.reshape(len(X), -1), y # разворачиваем картинки в векторы
 
+def _load_and_concat_targets_from_s3(bucket_name,
+                                      processed_prefix,
+                                      local_data_dir):
+    """
+    Загружает батчи targets в память и соединяет для обработки алгоритмом
+    """
+    s3 = S3Hook(aws_conn_id="s3")
+    os.makedirs(f"/tmp/{local_data_dir}", exist_ok=True)
+
+    keys = s3.list_keys(bucket_name,
+                        f"{processed_prefix}/processed/")  # получили список всех файлов внутри PROCESSED_PREFIX
+
+    y_list = []
+
+    for key in keys:  # цикл по файлам в S3
+        if key.endswith(".npy") and "X_" in key:  # если это один из батчей X
+            local_y = Path(f"/tmp/{local_data_dir}") / os.path.basename(key.replace("X_", "y_"))
+            local_y.parent.mkdir(parents=True, exist_ok=True)
+            s3.get_conn().download_file(
+                Bucket=bucket_name,
+                Key=key.replace("X_", "y_"),
+                Filename=str(local_y)
+            )
+            y = np.load(local_y)
+            y_list.append(y)
+    y = np.concatenate(y_list)
+
+    output_filename = f"y_transformed.npy"
+    np.save(output_filename, y)
+
+    # Загружаем файл в S3
+    s3 = S3Hook(aws_conn_id="s3")
+    s3.load_file(
+        filename=output_filename,
+        key=f"{processed_prefix}/transformed/{output_filename}",
+        bucket_name=bucket_name,
+        replace=True
+    )
+
+    print(f"Файл {output_filename} успешно загружен в S3.")
+    os.remove(output_filename)
+
 
 def _train_dim_model(
     dimensionally_alg_type: str,

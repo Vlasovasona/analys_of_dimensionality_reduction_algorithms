@@ -4,67 +4,59 @@ import mlflow
 import mlflow.sklearn
 from pathlib import Path
 
-from sklearn.decomposition import PCA
-from umap import UMAP
-from sklearn.manifold import TSNE
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 
-
-def load_data_from_s3(bucket_name="mri-dataset",
+def load_dim_data_from_s3(bucket_name="mri-dataset",
                       processed_prefix='mri',
-                      local_data_dir="mri_train_data"):
+                      local_data_dir="mri_train_data",
+                      dim_alg_name="pca"):
     """
-    Загружает батчи из S3 в память
+    Загружает данные, обработанные алгоритмами из бакета S3
     """
     s3 = S3Hook(aws_conn_id="s3")
-    os.makedirs(f"/tmp/{local_data_dir}", exist_ok=True)
 
-    keys = s3.list_keys(bucket_name,
-                        f"{processed_prefix}/processed/") # получили список всех файлов внутри PROCESSED_PREFIX
+    local_path = f"/tmp/{local_data_dir}"
+    os.makedirs(local_path, exist_ok=True)
 
-    X_list, y_list = [], []
+    s3_key_X = f"{processed_prefix}/transformed/X_{dim_alg_name}_transformed.npy"
+    local_file_X = os.path.join(local_path, f"X_{dim_alg_name}_transformed.npy")
 
-    for key in keys: # цикл по файлам в S3
-        if key.endswith(".npy") and "X_" in key: # если это один из батчей X
-            local_x = Path(f"/tmp/{local_data_dir}") / os.path.basename(key)
-            local_y = Path(f"/tmp/{local_data_dir}") / os.path.basename(key.replace("X_", "y_"))
+    s3_key_y = f"{processed_prefix}/transformed/y_transformed.npy"
+    local_file_y = os.path.join(local_path, f"y_transformed.npy")
 
-            # создаём директорию, если её нет
-            local_x.parent.mkdir(parents=True, exist_ok=True)
-            local_y.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        s3.get_conn().download_file(
+            Bucket=bucket_name,
+            Key=s3_key_X,
+            Filename=local_file_X
+        )
+        print(f"Файл {s3_key_X} успешно загружен в {local_file_X}")
 
-            # скачиваем батчи с данными для обучения и метками классов
+        X = np.load(local_file_X)
+
+        try:
             s3.get_conn().download_file(
                 Bucket=bucket_name,
-                Key=key,
-                Filename=str(local_x)
+                Key=s3_key_y,
+                Filename=local_file_y
             )
-            s3.get_conn().download_file(
-                Bucket=bucket_name,
-                Key=key.replace("X_", "y_"),
-                Filename=str(local_y)
-            )
+            print(f"Файл {s3_key_y} успешно загружен в {local_file_y}")
+            y = np.load(local_file_y)
+            return X, y
+        except Exception as e:
+            print(f"Файл с метками не найден: {e}")
+            raise
 
-            X = np.load(local_x)
-            y = np.load(local_y)
-
-            X_list.append(X)
-            y_list.append(y)
-
-    X = np.concatenate(X_list) # склеиваем все батчи
-    y = np.concatenate(y_list)
-
-    return X.reshape(len(X), -1), y # разворачиваем картинки в векторы
-
-def load_dim_model_from_s3():
-    pass
+    except Exception as e:
+        print(f"Ошибка при загрузке файла {s3_key_X}: {e}")
+        raise
 
 def _train_model(
-    model_type: str,
     dimensionally_alg_type: str,
+    model_type: str,
     bucket_name: str = "mri-dataset",
     processed_prefix: str = 'mri',
     local_data_dir: str = "mri_train_data",
@@ -72,20 +64,16 @@ def _train_model(
     mlflow_uri: str = "http://mlflow:5000",
 ):
     """
-    Универсальная функция обучения модели для Airflow
+    Универсальная функция обучения модели classic ML
     """
     mlflow.set_tracking_uri(mlflow_uri) # куда отправлять логи
     mlflow.set_experiment(mlflow_experiment_name)
 
     with mlflow.start_run(run_name=f"{dimensionally_alg_type}/{model_type}"):
-        X, y = load_data_from_s3(bucket_name, processed_prefix, local_data_dir)
+        X, y = load_dim_data_from_s3(bucket_name, processed_prefix, local_data_dir)
 
         mlflow.log_param("model_type", model_type) # логируем параметры обучения
         mlflow.log_param("original_dim", X.shape[1])
-
-        alg_model =  load_dim_model_from_s3(bucket_name, processed_prefix, local_data_dir)
-        X_new = alg_model.fit_transform(X)
-
 
         # создаем модели в зависимости от значения аргумента model_type
         if model_type == "logreg":
@@ -95,17 +83,15 @@ def _train_model(
         else:
             raise ValueError(f"Unknown model type: {model_type}")
 
-        model.fit(X_new, y)
-        preds = model.predict(X_new)
+        model.fit(X, y)
+        preds = model.predict(X)
 
         acc = accuracy_score(y, preds) # логируем метрики качества классификации
-        conf_matrix = confusion_matrix(y, preds)
-        precision = precision_score(y, preds)
-        recall = recall_score(y, preds)
-        f1 = f1_score(y, preds)
+        precision = precision_score(y_true=y, y_pred=preds, average="macro")
+        recall = recall_score(y_true=y, y_pred=preds, average="macro")
+        f1 = f1_score(y_true=y, y_pred=preds, average="macro")
 
         mlflow.log_metric("accuracy", acc)
-        mlflow.log_metric("conf_matrix", conf_matrix)
         mlflow.log_metric("precision", precision)
         mlflow.log_metric("recall", recall)
         mlflow.log_metric("f1", f1)
