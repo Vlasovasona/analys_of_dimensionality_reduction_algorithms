@@ -10,9 +10,11 @@ help:
 	@echo "  make docker-down - Остановка Docker контейнеров"
 
 install:
-	pip install --upgrade pip
-	pip install -r requirements-test.txt \
+	pip install -r docker/airflow/requirements.txt \
 	  --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-3.10.txt"
+
+	pip install -r requirements-test.txt
+
 	pip install -e .
 
 lint:
