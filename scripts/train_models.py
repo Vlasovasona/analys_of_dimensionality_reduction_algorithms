@@ -9,10 +9,10 @@ from sklearn.svm import SVC
 from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 
-def load_dim_data_from_s3(bucket_name="mri-dataset",
-                      processed_prefix='mri',
-                      local_data_dir="mri_train_data",
-                      dim_alg_name="pca"):
+
+def load_dim_data_from_s3(
+    bucket_name="mri-dataset", processed_prefix="mri", local_data_dir="mri_train_data", dim_alg_name="pca"
+):
     """
     Загружает данные, обработанные алгоритмами из бакета S3
     """
@@ -28,21 +28,13 @@ def load_dim_data_from_s3(bucket_name="mri-dataset",
     local_file_y = os.path.join(local_path, f"y_transformed.npy")
 
     try:
-        s3.get_conn().download_file(
-            Bucket=bucket_name,
-            Key=s3_key_X,
-            Filename=local_file_X
-        )
+        s3.get_conn().download_file(Bucket=bucket_name, Key=s3_key_X, Filename=local_file_X)
         print(f"Файл {s3_key_X} успешно загружен в {local_file_X}")
 
         X = np.load(local_file_X)
 
         try:
-            s3.get_conn().download_file(
-                Bucket=bucket_name,
-                Key=s3_key_y,
-                Filename=local_file_y
-            )
+            s3.get_conn().download_file(Bucket=bucket_name, Key=s3_key_y, Filename=local_file_y)
             print(f"Файл {s3_key_y} успешно загружен в {local_file_y}")
             y = np.load(local_file_y)
             return X, y
@@ -54,11 +46,12 @@ def load_dim_data_from_s3(bucket_name="mri-dataset",
         print(f"Ошибка при загрузке файла {s3_key_X}: {e}")
         raise
 
+
 def _train_model(
     dimensionally_alg_type: str,
     model_type: str,
     bucket_name: str = "mri-dataset",
-    processed_prefix: str = 'mri',
+    processed_prefix: str = "mri",
     local_data_dir: str = "mri_train_data",
     mlflow_experiment_name: str = "mri-brain-tumor",
     mlflow_uri: str = "http://mlflow:5000",
@@ -66,13 +59,13 @@ def _train_model(
     """
     Универсальная функция обучения модели classic ML
     """
-    mlflow.set_tracking_uri(mlflow_uri) # куда отправлять логи
+    mlflow.set_tracking_uri(mlflow_uri)  # куда отправлять логи
     mlflow.set_experiment(mlflow_experiment_name)
 
     with mlflow.start_run(run_name=f"{dimensionally_alg_type}/{model_type}"):
         X, y = load_dim_data_from_s3(bucket_name, processed_prefix, local_data_dir)
 
-        mlflow.log_param("model_type", model_type) # логируем параметры обучения
+        mlflow.log_param("model_type", model_type)  # логируем параметры обучения
         mlflow.log_param("original_dim", X.shape[1])
 
         # создаем модели в зависимости от значения аргумента model_type
@@ -86,7 +79,7 @@ def _train_model(
         model.fit(X, y)
         preds = model.predict(X)
 
-        acc = accuracy_score(y, preds) # логируем метрики качества классификации
+        acc = accuracy_score(y, preds)  # логируем метрики качества классификации
         precision = precision_score(y_true=y, y_pred=preds, average="macro")
         recall = recall_score(y_true=y, y_pred=preds, average="macro")
         f1 = f1_score(y_true=y, y_pred=preds, average="macro")

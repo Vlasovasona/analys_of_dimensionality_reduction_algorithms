@@ -14,11 +14,12 @@ sys.path.insert(0, PROJECT_ROOT)
 DAG_PATH = os.path.join(PROJECT_ROOT, "airflow/dags/**/*.py")
 DAG_FILES = glob.glob(DAG_PATH, recursive=True)
 
+
 # запускает тест отдельно для каждого файла из DAG_FILES, dag_file - параметр, в который подставляется путь к файлу
 @pytest.mark.parametrize("dag_file", DAG_FILES)
 def test_dag_integrity(dag_file):
     """Тест на благонадежность DAG, отсутствие циклов"""
-    module_name = os.path.splitext(os.path.basename(dag_file))[0] # берем название файла без расширения
+    module_name = os.path.splitext(os.path.basename(dag_file))[0]  # берем название файла без расширения
     module_path = dag_file
 
     # загрузка модуля module_name из файла по пути module_path
@@ -26,10 +27,7 @@ def test_dag_integrity(dag_file):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    dag_objects = [
-        var for var in vars(module).values()
-        if isinstance(var, DAG)
-    ]
+    dag_objects = [var for var in vars(module).values() if isinstance(var, DAG)]
 
     assert len(dag_objects) > 0, f"В файле {dag_file} не найдено DAG"
 
