@@ -1,4 +1,17 @@
 [flake8]
 max-line-length = 120
 extend-ignore = E203, W503
-exclude = .git, __pycache__, build, dist, venv, .venv, .env, .tox, .eggs, *.egg
+exclude =
+    .git,
+    __pycache__,
+    build,
+    dist,
+    venv,
+    .venv,
+    .env,
+    .tox,
+    .eggs,
+    *.egg,
+    .github,
+    airflow/logs
+select = E9,F63,F7,F82,W292
