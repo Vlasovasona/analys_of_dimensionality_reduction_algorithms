@@ -1,0 +1,72 @@
+name: Full CI with Annotations
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+    branches: [ "**" ]
+
+jobs:
+  lint:
+    name: Linting with Annotations
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install linters
+      run: |
+        pip install flake8 black flake8-annotations flake8-bugbear
+
+    - name: Run flake8 with annotations
+      run: |
+        flake8 . --format='::warning file={file},line={line},col={col},title={code}::{text}'
+      continue-on-error: true
+
+    - name: Run black with annotations
+      run: |
+        black --check . --diff | while read line; do
+          if [[ $line =~ ^---\ (.*)\ \+\+\+ ]]; then
+            FILE="${BASH_REMATCH[1]}"
+          elif [[ $line =~ ^@@\ -([0-9]+) ]]; then
+            LINE="${BASH_REMATCH[1]}"
+            echo "::warning file=$FILE,line=$LINE,title=Black formatting::File needs formatting. Run 'black .'"
+          fi
+        done
+      continue-on-error: true
+
+  test:
+    name: Tests
+    runs-on: ubuntu-22.04
+    needs: lint
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        pip install apache-airflow pytest
+        pip install --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-3.10.txt"
+
+    - name: Set PYTHONPATH
+      run: echo "PYTHONPATH=${{ github.workspace }}" >> $GITHUB_ENV
+
+    - name: Test DAGs
+      run: |
+        pytest tests/airflow/dags/ -v --tb=short
+
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results
+        path: .pytest_cache/
