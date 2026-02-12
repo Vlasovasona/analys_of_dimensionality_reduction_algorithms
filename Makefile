@@ -11,8 +11,22 @@ help:
 
 install:
 	pip install --upgrade pip
-	pip install -r requirements-test.txt \
-	  --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-3.10.txt"
+
+	# 1. Устанавливаем Airflow и всё для DAG
+	pip install apache-airflow==2.7.3 \
+	    numpy==1.24.3 \
+	    pandas==2.0.3 \
+	    scikit-learn==1.3.2 \
+	    boto3==1.34.0 \
+	    pytest==7.4.3 \
+	    pytest-cov==4.1.0 \
+	    --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-3.10.txt"
+
+	# 2. Устанавливаем инструменты разработчика (без constraints)
+	pip install flake8==6.1.0 \
+	            black==23.11.0 \
+	            pylint==3.0.2
+
 	pip install -e .
 
 lint:
