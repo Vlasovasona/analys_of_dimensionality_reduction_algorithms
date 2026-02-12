@@ -6,7 +6,7 @@ pytest-cov==4.1.0
 flake8==6.1.0
 black==23.10.1
 pylint==3.0.2
-mypy==1.7.0
+mypy==1.2.0
 
 # Airflow
 apache-airflow==2.7.3
