@@ -54,8 +54,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        pip install apache-airflow pytest
-        pip install --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-3.10.txt"
+        pip install apache-airflow pytest --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-3.10.txt"
 
     - name: Set PYTHONPATH
       run: echo "PYTHONPATH=${{ github.workspace }}" >> $GITHUB_ENV
