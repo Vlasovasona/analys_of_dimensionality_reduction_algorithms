@@ -2,7 +2,7 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 # from airflow.utils.dates import days_ago
 import pendulum
-from scripts.data_extraction.mri import _download_mri_dataset, _upload_images_to_s3, _preprocess_mri_images
+from scripts.data_extraction import _download_mri_dataset, _upload_images_to_s3, _preprocess_mri_images
 from scripts.train_models import _train_model
 from scripts.classic_dim_algs import _train_dim_model, _load_and_concat_targets_from_s3
 
@@ -37,7 +37,7 @@ umap_dict = {
 dag = DAG(
     dag_id='dimensionality_reduction_algorithms',
     start_date=pendulum.datetime(2026, 1, 1),
-    schedule_interval=None,
+    # schedule_interval=None,
     catchup=False
 )
 

@@ -8,6 +8,7 @@ x-environment: &airflow_environment
   - AIRFLOW__CORE__STORE_DAG_CODE=True
   - AIRFLOW__CORE__STORE_SERIALIZED_DAGS=True
   - AIRFLOW__WEBSERVER__EXPOSE_CONFIG=True
+  - PYTHONPATH=/opt/airflow:/opt/airflow/dags:/opt/airflow/scripts
 
 x-airflow-image: &airflow_image apache/airflow:2.7.3-python3.8
 
@@ -32,6 +33,9 @@ services:
     environment: *airflow_environment
     entrypoint: /bin/bash
     command: -c "airflow db migrate && airflow users create --username admin --password admin --firstname Admin --lastname Admin --role Admin --email admin@example.com"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./scripts:/opt/airflow/scripts
     networks:
       - airflow_net
 
@@ -49,6 +53,7 @@ services:
       - "8080:8080"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
+      - ./scripts:/opt/airflow/scripts
       - logs:/opt/airflow/logs
     env_file:
       - .env
@@ -69,6 +74,7 @@ services:
       - mlflow
     volumes:
       - ./airflow/dags:/opt/airflow/dags
+      - ./scripts:/opt/airflow/scripts
       - data:/opt/airflow/data
       - logs:/opt/airflow/logs
     env_file:
