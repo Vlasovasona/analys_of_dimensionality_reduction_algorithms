@@ -38,7 +38,6 @@ umap_dict = {
 dag = DAG(
     dag_id="dimensionality_reduction_algorithms",
     start_date=pendulum.datetime(2026, 1, 1),
-    # schedule_interval=None,
     catchup=False,
 )
 
