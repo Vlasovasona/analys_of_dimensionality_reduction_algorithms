@@ -545,3 +545,30 @@ class TestLoadAndConcatTargetsFromS3:
 
         with pytest.raises(ClientError):
             _load_and_concat_targets_from_s3("test-bucket", "mri", "test_dir")
+
+class TestTrainDimModel:
+    def test_empty_dimensionally_alg_type(self):
+        with pytest.raises(ValueError, match="dimensionally_alg_type не может быть пустым"):
+            _train_dim_model(
+                dimensionally_alg_type="",
+                dim_arg_hyperparams=dict(),
+                bucket_name="test-bucket",
+                processed_prefix="proccessed",
+                local_data_dir="test_dir",
+                mlflow_experiment_name="default_name",
+                mlflow_uri="http://mlflow:5000",
+            )
+
+    def test_not_valid_alg_type(self):
+        valid_algorithms = ["pca", "tsne", "umap", "TDA"]
+
+        with pytest.raises(ValueError, match=f"Неизвестный тип алгоритма: incorrect_value. Допустимые значения: {valid_algorithms}"):
+            _train_dim_model(
+                dimensionally_alg_type="incorrect_value",
+                dim_arg_hyperparams=dict(),
+                bucket_name="test-bucket",
+                processed_prefix="proccessed",
+                local_data_dir="test_dir",
+                mlflow_experiment_name="default_name",
+                mlflow_uri="http://mlflow:5000",
+            )
