@@ -1,28 +1,76 @@
 import os
+from typing import Tuple, List
 import numpy as np
+from numpy import ndarray
 import mlflow
+import logging
 import mlflow.sklearn
 from pathlib import Path
+from botocore.exceptions import ClientError, NoCredentialsError, EndpointConnectionError
 
 from sklearn.decomposition import PCA
 from umap import UMAP
 from sklearn.manifold import TSNE
-from sklearn.linear_model import LogisticRegression
-from sklearn.svm import SVC
-from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 
+logger = logging.getLogger(__name__)
 
-def load_data_from_s3(bucket_name, processed_prefix, local_data_dir):
+def load_data_from_s3(bucket_name: str,
+                      processed_prefix: str,
+                      local_data_dir: str) -> Tuple[ndarray, ndarray]:
     """
     Загружает батчи из S3 в память
+
+    Args:
+        bucket_name: Название S3 бакета
+        processed_prefix: Префикс пути к обработанным данным в бакете
+        local_data_dir: Имя локальной директории для временных файлов (создается в /tmp/)
+
+    Returns:
+        Tuple[ndarray, ndarray]: Кортеж из двух массивов numpy:
+            - X: Массив признаков размерности (n_samples, n_features)
+            - y: Массив меток классов размерности (n_samples,)
+
+    Raises:
+        ValueError: Если не найдены файлы с данными или бакет не существует
+        botocore.exceptions.NoCredentialsError: Если нет доступа к AWS
+        botocore.exceptions.ClientError: При ошибках S3 (бакет не найден, нет прав)
+        FileNotFoundError: Если не удалось скачать файлы
     """
-    s3 = S3Hook(aws_conn_id="s3")
+    if not bucket_name:
+        raise ValueError("bucket_name не может быть пустым")
+    if not processed_prefix:
+        raise ValueError("processed_prefix не может быть пустым")
+    if not local_data_dir:
+        raise ValueError("local_data_dir не может быть пустым")
+
+    try:
+        s3 = S3Hook(aws_conn_id="s3")
+        logger.info("Подключение к S3 успешно")
+    except NoCredentialsError:
+        raise ConnectionError("Отсутствуют учетные данные AWS") from None
+    except EndpointConnectionError:
+        raise ConnectionError("Нет подключения к AWS эндпоинту")
+    except Exception as e:
+        raise ConnectionError(f"Ошибка подключения к S3: {e}") from e
+
     os.makedirs(f"/tmp/{local_data_dir}", exist_ok=True)
 
-    keys = s3.list_keys(
-        bucket_name, f"{processed_prefix}/processed/"
-    )  # получили список всех файлов внутри PROCESSED_PREFIX
+    try:
+        keys = s3.list_keys(
+            bucket_name, f"{processed_prefix}/processed/"
+        )  # получили список всех файлов внутри PROCESSED_PREFIX
+        logger.info(f"Найдено {len(keys)} файлов в s3")
+    except ClientError as e:
+        error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+        if error_code == 'NoSuchBucket':
+            raise ValueError(f"Бакет {bucket_name} не найден") from e
+        elif error_code == 'AccessDenied':
+            raise PermissionError(f"Нет доступа к бакету {bucket_name}") from e
+        else:
+            raise ConnectionError(f"Ошибка S3: {e}") from e
+    except Exception as e:
+        raise RuntimeError(f"Ошибка получения списка файлов: {e}") from e
 
     X_list, y_list = [], []
 
@@ -51,16 +99,60 @@ def load_data_from_s3(bucket_name, processed_prefix, local_data_dir):
     return X.reshape(len(X), -1), y  # разворачиваем картинки в векторы
 
 
-def _load_and_concat_targets_from_s3(bucket_name, processed_prefix, local_data_dir):
+def _load_and_concat_targets_from_s3(bucket_name: str,
+                                    processed_prefix: str,
+                                    local_data_dir: str):
     """
     Загружает батчи targets в память и соединяет для обработки алгоритмом
+
+    Args:
+        bucket_name: Название S3 бакета
+        processed_prefix: Префикс пути к обработанным данным в бакете
+        local_data_dir: Имя локальной директории для временных файлов (создается в /tmp/)
+
+    Returns: None
+
+    Raises:
+        ValueError: Если не найдены файлы с данными или бакет не существует
+        botocore.exceptions.NoCredentialsError: Если нет доступа к AWS
+        botocore.exceptions.ClientError: При ошибках S3 (бакет не найден, нет прав)
+        FileNotFoundError: Если не удалось скачать файлы
     """
-    s3 = S3Hook(aws_conn_id="s3")
+    if not bucket_name:
+        raise ValueError("bucket_name не может быть пустым")
+    if not processed_prefix:
+        raise ValueError("processed_prefix не может быть пустым")
+    if not local_data_dir:
+        raise ValueError("local_data_dir не может быть пустым")
+
+    try:
+        s3 = S3Hook(aws_conn_id="s3")
+        logger.info("Подключение к S3 успешно")
+    except NoCredentialsError:
+        raise ConnectionError("Отсутствуют учетные данные AWS") from None
+    except EndpointConnectionError:
+        raise ConnectionError("Нет подключения к AWS эндпоинту")
+    except Exception as e:
+        raise ConnectionError(f"Ошибка подключения к S3: {e}") from e
+
+
     os.makedirs(f"/tmp/{local_data_dir}", exist_ok=True)
 
-    keys = s3.list_keys(
-        bucket_name, f"{processed_prefix}/processed/"
-    )  # получили список всех файлов внутри PROCESSED_PREFIX
+    try:
+        keys = s3.list_keys(
+            bucket_name, f"{processed_prefix}/processed/"
+        )  # получили список всех файлов внутри PROCESSED_PREFIX
+        logger.info(f"Найдено {len(keys)} файлов в s3")
+    except ClientError as e:
+        error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+        if error_code == 'NoSuchBucket':
+            raise ValueError(f"Бакет {bucket_name} не найден") from e
+        elif error_code == 'AccessDenied':
+            raise PermissionError(f"Нет доступа к бакету {bucket_name}") from e
+        else:
+            raise ConnectionError(f"Ошибка S3: {e}") from e
+    except Exception as e:
+        raise RuntimeError(f"Ошибка получения списка файлов: {e}") from e
 
     y_list = []
 
@@ -92,16 +184,33 @@ def _load_and_concat_targets_from_s3(bucket_name, processed_prefix, local_data_d
 def _train_dim_model(
     dimensionally_alg_type: str,
     dim_arg_hyperparams: dict,
-    bucket_name: str = "mri-dataset",
-    processed_prefix: str = "mri",
-    local_data_dir: str = "mri_train_data",
-    mlflow_experiment_name: str = "mri-brain-tumor",
-    mlflow_uri: str = "http://mlflow:5000",
+    bucket_name: str,
+    processed_prefix: str,
+    local_data_dir: str,
+    mlflow_experiment_name: str,
+    mlflow_uri: str,
 ):
     """
-    Универсальная функция обучения модели для Airflow
+    Универсальная функция обучения классического алгоритма понижения размерности
+
+    Args:
+        dimensionally_alg_type: Тип алгоритма понижения размерности,
+        dim_arg_hyperparams: Словарь гиперпараметров для алгоритма
+        bucket_name: Название S3 бакета
+        processed_prefix: Префикс пути к обработанным данным в бакете
+        local_data_dir: Имя локальной директории для временных файлов (создается в /tmp/)
+        mlflow_experiment_name: Название эксперимента для MLflow
+        mlflow_uri: URI для MLflow
+
+    Returns: None
+
+    Raises:
+        ValueError: Если не найдены файлы с данными или бакет не существует
+        botocore.exceptions.NoCredentialsError: Если нет доступа к AWS
+        botocore.exceptions.ClientError: При ошибках S3 (бакет не найден, нет прав)
+        FileNotFoundError: Если не удалось скачать файлы
     """
-    mlflow.set_tracking_uri(mlflow_uri)  # куда отправлять логи
+    mlflow.set_tracking_uri(mlflow_uri)
     mlflow.set_experiment(mlflow_experiment_name)
 
     with mlflow.start_run(run_name=f"{dimensionally_alg_type}"):

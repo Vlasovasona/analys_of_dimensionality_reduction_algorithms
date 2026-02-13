@@ -1,7 +1,6 @@
 import os
 import shutil
 import numpy as np
-import cv2
 import io
 import json
 import kagglehub
@@ -18,7 +17,11 @@ TMP_DIR = "/tmp/mri_batches"
 
 def _download_mri_dataset():
     """Скачивание датасета из Kaggle в локальное хранилище"""
-    path = kagglehub.dataset_download("fernando2rad/brain-tumor-mri-images-44c")
+    try:
+        path = kagglehub.dataset_download("fernando2rad/brain-tumor-mri-images-44c")
+    except Exception as e:
+        print(f"Failed dataset download: {e}")
+
     os.makedirs(DATA_DIR, exist_ok=True)  # создает целевой каталог
     for item in os.listdir(path):  # берет все содержимое скачанного датасета (item - имя элемента, не полный путь)
         src = os.path.join(path, item)  # формирование полного пути
@@ -59,6 +62,8 @@ def _save_batch(X, y, batch_id, s3):
 
 def _preprocess_mri_images():
     """Нормализация, resize картинок, формирование батчей, загрузка обработанных данных в S3"""
+    import cv2
+
     os.makedirs(TMP_DIR, exist_ok=True)
     s3 = S3Hook(aws_conn_id="s3")
 
