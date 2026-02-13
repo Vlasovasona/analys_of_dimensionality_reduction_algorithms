@@ -187,8 +187,8 @@ def _train_dim_model(
     bucket_name: str,
     processed_prefix: str,
     local_data_dir: str,
-    mlflow_experiment_name: str,
-    mlflow_uri: str,
+    mlflow_experiment_name: str = "default_name",
+    mlflow_uri: str = "http://mlflow:5000",
 ):
     """
     Универсальная функция обучения классического алгоритма понижения размерности
@@ -205,64 +205,110 @@ def _train_dim_model(
     Returns: None
 
     Raises:
-        ValueError: Если не найдены файлы с данными или бакет не существует
-        botocore.exceptions.NoCredentialsError: Если нет доступа к AWS
-        botocore.exceptions.ClientError: При ошибках S3 (бакет не найден, нет прав)
-        FileNotFoundError: Если не удалось скачать файлы
+        ValueError: При некорректных параметрах или отсутствии данных
+        ConnectionError: При проблемах с подключением к AWS
+        RuntimeError: При критических ошибках выполнения
     """
+    logger.info(f"Start learning {dimensionally_alg_type} with hyperparams: {dim_arg_hyperparams}")
+
+    try:
+        if not dimensionally_alg_type:
+            raise ValueError("dimensionally_alg_type не может быть пустым")
+
+        valid_algorithms = ["pca", "tsne", "umap", "TDA"]
+        if dimensionally_alg_type not in valid_algorithms:
+            raise ValueError(f"Неизвестный тип алгоритма: {dimensionally_alg_type}. "
+                             f"Допустимые значения: {valid_algorithms}")
+
+        if not dim_arg_hyperparams:
+            raise ValueError("dim_arg_hyperparams не может быть пустым")
+
+        if not bucket_name:
+            raise ValueError("bucket_name не может быть пустым")
+
+        if not processed_prefix:
+            raise ValueError("processed_prefix не может быть пустым")
+
+        if not local_data_dir:
+            raise ValueError("local_data_dir не может быть пустым")
+
+        # Проверка обязательных параметров для каждого алгоритма
+        if dimensionally_alg_type == "pca":
+            if "pca_components" not in dim_arg_hyperparams:
+                raise ValueError("Для PCA обязателен параметр 'pca_components'")
+            if not isinstance(dim_arg_hyperparams["pca_components"], (int, float)):
+                raise ValueError("pca_components должен быть числом")
+
+        elif dimensionally_alg_type == "tsne":
+            required_params = ["n_components", "perplexity", "early_exaggeration", "learning_rate"]
+            missing = [p for p in required_params if p not in dim_arg_hyperparams]
+            if missing:
+                raise ValueError(f"Для t-SNE обязательны параметры: {missing}")
+
+        elif dimensionally_alg_type == "umap":
+            required_params = ["n_neighbors", "min_dist", "n_components", "metric", "spread"]
+            missing = [p for p in required_params if p not in dim_arg_hyperparams]
+            if missing:
+                raise ValueError(f"Для UMAP обязательны параметры: {missing}")
+
+    except ValueError as e:
+        raise
+
     mlflow.set_tracking_uri(mlflow_uri)
     mlflow.set_experiment(mlflow_experiment_name)
 
+    X, y = load_data_from_s3(bucket_name, processed_prefix, local_data_dir)
+
+    if X.size == 0:
+        raise ValueError("Загружен пустой массив X")
+    if y.size == 0:
+        raise ValueError("Загружен пустой массив y")
+    if X.shape[0] != y.shape[0]:
+        raise ValueError(f"Несоответствие размерностей: X[{X.shape[0]}], y[{y.shape[0]}]")
+
     with mlflow.start_run(run_name=f"{dimensionally_alg_type}"):
-        X, y = load_data_from_s3(bucket_name, processed_prefix, local_data_dir)
-
         if dimensionally_alg_type == "pca":
-            mlflow.log_param("pca_components", dim_arg_hyperparams["pca_components"])
+            n_components = dim_arg_hyperparams["pca_components"]
 
-            pca = PCA(n_components=dim_arg_hyperparams["pca_components"])
-            X_new = pca.fit_transform(X)
+            max_components = min(X.shape[1], X.shape[0])
+            if n_components > max_components:
+                logger.warning(
+                    f"pca_components={n_components} больше максимально возможного {max_components}. Уменьшено до {max_components}")
+                n_components = max_components
+
+            mlflow.log_param("pca_components", n_components)
+
+            model = PCA(n_components=n_components)
+            X_new = model.fit_transform(X)
+
+            explained_variance = sum(model.explained_variance_ratio_)
+            mlflow.log_metric("explained_variance_ratio", explained_variance)
 
         elif dimensionally_alg_type == "tsne":
-            mlflow.log_param("n_components", dim_arg_hyperparams["n_components"])
-            mlflow.log_param("perplexity", dim_arg_hyperparams["perplexity"])
-            mlflow.log_param("early_exaggeration", dim_arg_hyperparams["early_exaggeration"])
-            mlflow.log_param("learning_rate", dim_arg_hyperparams["learning_rate"])
-            mlflow.log_param("metric", dim_arg_hyperparams["metric"])
-            mlflow.log_param("init", dim_arg_hyperparams["init"])
-            mlflow.log_param("angle", dim_arg_hyperparams["angle"])
+            logger.info("Обучение t-SNE")
+            max_samples = 10_000
+            if X.shape[0] > max_samples:
+                # слишком большой объем данных, t-SNE применять может быть нецелесообразно
+                logger.warning(f"t-SNE с {X.shape[0]} сэмплами может быть медленным. Рекомендуется ≤ {max_samples}")
 
-            tsne = TSNE(
-                n_components=dim_arg_hyperparams["n_components"],  # 2-компонентное представление
-                perplexity=dim_arg_hyperparams["perplexity"],
-                early_exaggeration=dim_arg_hyperparams[
-                    "early_exaggeration"
-                ],  # Умножение дальних расстояний на раннем этапе
-                learning_rate=dim_arg_hyperparams["learning_rate"],  # авто-выбор скорости обучения
-                metric=dim_arg_hyperparams["metric"],  # евклидово расстояние
-                init=dim_arg_hyperparams["init"],
-                angle=dim_arg_hyperparams["angle"],  # баланс между скоростью и точностью
-            )
-            X_new = tsne.fit_transform(X)
+            try:
+                model = TSNE(**dim_arg_hyperparams)
+                X_new = model.fit_transform(X)
+                logger.info(f"t-SNE выполнен: X_new.shape={X_new.shape}")
+            except Exception as e:
+                logger.error(f"Ошибка обучения t-SNE: {e}")
+                raise RuntimeError(f"Ошибка обучения t-SNE: {e}") from e
+
 
         elif dimensionally_alg_type == "umap":
-            mlflow.log_param("umap_components", dim_arg_hyperparams["n_components"])
-            mlflow.log_param("min_dist", dim_arg_hyperparams["min_dist"])
-            mlflow.log_param("n_neighbors", dim_arg_hyperparams["n_neighbors"])
-            mlflow.log_param("metric", dim_arg_hyperparams["metric"])
-            mlflow.log_param("spread", dim_arg_hyperparams["spread"])
-            mlflow.log_param("low_memory", dim_arg_hyperparams["low_memory"])
-            mlflow.log_param("init", dim_arg_hyperparams["init"])
+            logger.info("Обучение umap")
 
-            umap = UMAP(
-                n_neighbors=dim_arg_hyperparams["n_neighbors"],  # количество соседей
-                min_dist=dim_arg_hyperparams["min_dist"],  # плотные группировки близких элементов
-                n_components=dim_arg_hyperparams["n_components"],  # двухкомпонентное представление
-                metric=dim_arg_hyperparams["metric"],  #  евклидова метрика
-                spread=dim_arg_hyperparams["spread"],  # нормальное распространение
-                low_memory=dim_arg_hyperparams["low_memory"],  # экономия памяти при большой выборке
-                init=dim_arg_hyperparams["init"],
-            )
-            X_new = umap.fit_transform(X)
+            try:
+                model = UMAP(**dim_arg_hyperparams)
+                X_new = model.fit_transform(X)
+            except Exception as e:
+                logger.error(f"Ошибка обучения UMAP: {e}")
+                raise RuntimeError(f"Ошибка обучения UMAP: {e}") from e
 
         elif dimensionally_alg_type == "TDA":  # реализовать!
             mlflow.log_param("TDA", "TDA")
@@ -270,12 +316,14 @@ def _train_dim_model(
         else:
             ValueError(f"Unknown dimensionally algorithm type: {dimensionally_alg_type}")
 
-        if dimensionally_alg_type == "pca":
-            mlflow.sklearn.log_model(pca, "pca")
-        elif dimensionally_alg_type == "tsne":
-            mlflow.sklearn.log_model(tsne, "tsne")
-        elif dimensionally_alg_type == "umap":
-            mlflow.sklearn.log_model(umap, "umap")
+        if model is not None:
+            mlflow.sklearn.log_model(model, f"dimensionally_alg_type")
+
+            for key, value in dim_arg_hyperparams.items():
+                try:
+                    mlflow.log_param(key, value)
+                except Exception as e:
+                    logger.warning(f"Не удалось залогировать параметр {key}: {e}")
 
         output_filename = f"X_{dimensionally_alg_type}_transformed.npy"
         np.save(output_filename, X_new)

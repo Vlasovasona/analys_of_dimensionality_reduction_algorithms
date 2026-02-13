@@ -4,6 +4,7 @@ import os
 import sys
 import pytest
 from airflow.models import DAG
+from airflow.models import DagBag
 from airflow.exceptions import AirflowDagCycleException
 
 # поднимаемся на три уровня вверх от директории расположения текущесго файла
@@ -13,7 +14,6 @@ sys.path.insert(0, PROJECT_ROOT)
 # рекурсивно обходим все файлы .py директории с дагами
 DAG_PATH = os.path.join(PROJECT_ROOT, "airflow/dags/**/*.py")
 DAG_FILES = glob.glob(DAG_PATH, recursive=True)
-
 
 # запускает тест отдельно для каждого файла из DAG_FILES, dag_file - параметр, в который подставляется путь к файлу
 @pytest.mark.parametrize("dag_file", DAG_FILES)
