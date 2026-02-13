@@ -217,8 +217,7 @@ def _train_dim_model(
 
         valid_algorithms = ["pca", "tsne", "umap", "TDA"]
         if dimensionally_alg_type not in valid_algorithms:
-            raise ValueError(f"Неизвестный тип алгоритма: {dimensionally_alg_type}. "
-                             f"Допустимые значения: {valid_algorithms}")
+            raise ValueError(f"Неизвестный тип алгоритма: {dimensionally_alg_type}. Допустимые значения: {' '.join(valid_algorithms)}")
 
         if not isinstance(dimensionally_alg_type, str):
             raise ValueError(f"Некорректный тип переменной: dimensionally_alg_type. "
