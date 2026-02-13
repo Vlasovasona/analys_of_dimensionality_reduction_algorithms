@@ -220,6 +220,10 @@ def _train_dim_model(
             raise ValueError(f"Неизвестный тип алгоритма: {dimensionally_alg_type}. "
                              f"Допустимые значения: {valid_algorithms}")
 
+        if not isinstance(dimensionally_alg_type, str):
+            raise ValueError(f"Некорректный тип переменной: dimensionally_alg_type. "
+                             f"Допустимо использовать только строковую переменную")
+
         if not dim_arg_hyperparams:
             raise ValueError("dim_arg_hyperparams не может быть пустым")
 
