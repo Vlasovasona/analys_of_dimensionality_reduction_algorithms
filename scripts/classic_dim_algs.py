@@ -13,6 +13,8 @@ from umap import UMAP
 from sklearn.manifold import TSNE
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 
+from parameters_validation.validate_classic_dim_algs import validate_dimensionality_config, validate_loaded_arrays
+
 logger = logging.getLogger(__name__)
 
 def load_data_from_s3(bucket_name: str,
@@ -53,6 +55,10 @@ def load_data_from_s3(bucket_name: str,
         keys = s3.list_keys(
             bucket_name, f"{processed_prefix}/processed/"
         )  # получили список всех файлов внутри PROCESSED_PREFIX
+        if not keys:
+            raise ValueError(
+                f"В бакете {bucket_name} нет файлов по префиксу {processed_prefix}/processed/"
+            )
         logger.info(f"Найдено {len(keys)} файлов в s3")
     except ClientError as e:
         error_code = e.response.get('Error', {}).get('Code', 'Unknown')
@@ -111,13 +117,6 @@ def _load_and_concat_targets_from_s3(bucket_name: str,
         botocore.exceptions.ClientError: При ошибках S3 (бакет не найден, нет прав)
         FileNotFoundError: Если не удалось скачать файлы
     """
-    if not bucket_name:
-        raise ValueError("bucket_name не может быть пустым")
-    if not processed_prefix:
-        raise ValueError("processed_prefix не может быть пустым")
-    if not local_data_dir:
-        raise ValueError("local_data_dir не может быть пустым")
-
     try:
         s3 = S3Hook(aws_conn_id="s3")
         logger.info("Подключение к S3 успешно")
@@ -134,7 +133,11 @@ def _load_and_concat_targets_from_s3(bucket_name: str,
     try:
         keys = s3.list_keys(
             bucket_name, f"{processed_prefix}/processed/"
-        )  # получили список всех файлов внутри PROCESSED_PREFIX
+        )
+        if not keys:
+            raise ValueError(
+                f"В бакете {bucket_name} нет файлов по префиксу {processed_prefix}/processed/"
+            )
         logger.info(f"Найдено {len(keys)} файлов в s3")
     except ClientError as e:
         error_code = e.response.get('Error', {}).get('Code', 'Unknown')
@@ -204,62 +207,12 @@ def _train_dim_model(
     """
     logger.info(f"Start learning {dimensionally_alg_type} with hyperparams: {dim_arg_hyperparams}")
 
-    try:
-        if not dimensionally_alg_type:
-            raise ValueError("dimensionally_alg_type не может быть пустым")
-
-        valid_algorithms = ["pca", "tsne", "umap", "TDA"]
-        if dimensionally_alg_type not in valid_algorithms:
-            raise ValueError(f"Неизвестный тип алгоритма: {dimensionally_alg_type}. Допустимые значения: {' '.join(valid_algorithms)}")
-
-        if not dim_arg_hyperparams:
-            raise ValueError("dim_arg_hyperparams не может быть пустым")
-
-        if not isinstance(dim_arg_hyperparams, dict):
-            raise ValueError("Неверный тип переменной dim_arg_hyperparams, ожидался словарь")
-
-        if not bucket_name or bucket_name.rstrip() == "":
-            raise ValueError("bucket_name не может быть пустым")
-
-        if not processed_prefix or processed_prefix.rstrip() == "":
-            raise ValueError("processed_prefix не может быть пустым")
-
-        if not local_data_dir or local_data_dir.rstrip() == "":
-            raise ValueError("local_data_dir не может быть пустым")
-
-        # Проверка обязательных параметров для каждого алгоритма
-        if dimensionally_alg_type == "pca":
-            if "pca_components" not in dim_arg_hyperparams:
-                raise ValueError("Для PCA обязателен параметр 'pca_components'")
-            if not isinstance(dim_arg_hyperparams["pca_components"], (int, float)):
-                raise ValueError("pca_components должен быть числом")
-
-        elif dimensionally_alg_type == "tsne":
-            required_params = ["n_components", "perplexity", "early_exaggeration", "learning_rate"]
-            missing = [p for p in required_params if p not in dim_arg_hyperparams]
-            if missing:
-                raise ValueError(f"Для t-SNE обязательны параметры: {missing}")
-
-        elif dimensionally_alg_type == "umap":
-            required_params = ["n_neighbors", "min_dist", "n_components", "metric", "spread"]
-            missing = [p for p in required_params if p not in dim_arg_hyperparams]
-            if missing:
-                raise ValueError(f"Для UMAP обязательны параметры: {missing}")
-
-    except ValueError as e:
-        raise
-
     mlflow.set_tracking_uri(mlflow_uri)
     mlflow.set_experiment(mlflow_experiment_name)
 
     X, y = load_data_from_s3(bucket_name, processed_prefix, local_data_dir)
 
-    if X.size == 0:
-        raise ValueError("Загружен пустой массив X")
-    if y.size == 0:
-        raise ValueError("Загружен пустой массив y")
-    if X.shape[0] != y.shape[0]:
-        raise ValueError(f"Несоответствие размерностей: X[{X.shape[0]}], y[{y.shape[0]}]")
+    validate_loaded_arrays(X, y)
 
     with mlflow.start_run(run_name=f"{dimensionally_alg_type}"):
         if dimensionally_alg_type == "pca":

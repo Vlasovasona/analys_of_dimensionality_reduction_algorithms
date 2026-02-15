@@ -6,34 +6,43 @@ import pendulum
 from scripts.data_extraction import _download_mri_dataset, _upload_images_to_s3, _preprocess_mri_images
 from scripts.train_models import _train_model
 from scripts.classic_dim_algs import _train_dim_model, _load_and_concat_targets_from_s3
+from scripts.parameters_validation.validate_classic_dim_algs import validate_dimensionality_config
 
-BUCKET_NAME = "mri-dataset"
-PROCESSED_PREFIX = "mri"
-LOCAL_DATA_DIR = "mri_train_data"
+from scripts.dag_variables import BUCKET_NAME, PROCESSED_PREFIX, LOCAL_DATA_DIR, DIM_ALGORITHMS
 
-pca_dict = {
-    "pca_components": 120,
-}
+def build_dim_tasks(
+    alg_name: str,
+    hyperparams: dict,
+    preprocess_task,
+):
+    validate_task = PythonOperator(
+        task_id=f"validate_{alg_name}_config",
+        python_callable=validate_dimensionality_config,
+        op_kwargs={
+            "dimensionally_alg_type": alg_name,
+            "dim_arg_hyperparams": hyperparams,
+            "bucket_name": BUCKET_NAME,
+            "processed_prefix": PROCESSED_PREFIX,
+            "local_data_dir": LOCAL_DATA_DIR,
+        },
+        dag=dag,
+    )
 
-tsne_dict = {
-    "n_components": 2,
-    "perplexity": 30,
-    "early_exaggeration": 12,
-    "learning_rate": "auto",
-    "metric": "euclidean",
-    "init": "pca",
-    "angle": 0.5,
-}
+    train_task = PythonOperator(
+        task_id=f"create_{alg_name}",
+        python_callable=_train_dim_model,
+        op_kwargs={
+            "dimensionally_alg_type": alg_name,
+            "dim_arg_hyperparams": hyperparams,
+            "bucket_name": BUCKET_NAME,
+            "processed_prefix": PROCESSED_PREFIX,
+            "local_data_dir": LOCAL_DATA_DIR,
+        },
+        dag=dag,
+    )
 
-umap_dict = {
-    "n_neighbors": 15,
-    "min_dist": 0.1,
-    "n_components": 2,
-    "metric": "euclidean",
-    "spread": 1.0,
-    "low_memory": True,
-    "init": "spectral",
-}
+    preprocess_task >> validate_task >> train_task
+    return train_task
 
 dag = DAG(
     dag_id="dimensionality_reduction_algorithms",
@@ -58,41 +67,88 @@ with dag:
         python_callable=_preprocess_mri_images,
     )
 
-    create_pca = PythonOperator(
-        task_id="create_pca",
-        python_callable=_train_dim_model,
-        op_kwargs={
-            "dimensionally_alg_type": "pca",
-            "dim_arg_hyperparams": pca_dict,
-            "bucket_name": BUCKET_NAME,
-            "processed_prefix": PROCESSED_PREFIX,
-            "local_data_dir": LOCAL_DATA_DIR,
-        },
-    )
+    # validate_pca = PythonOperator(
+    #     task_id="validate_pca_config",
+    #     python_callable=validate_dimensionality_config,
+    #     op_kwargs={
+    #         "dimensionally_alg_type": "pca",
+    #         "dim_arg_hyperparams": pca_dict,
+    #         "bucket_name": BUCKET_NAME,
+    #         "processed_prefix": PROCESSED_PREFIX,
+    #         "local_data_dir": LOCAL_DATA_DIR,
+    #     },
+    # )
+    #
+    # validate_tsne = PythonOperator(
+    #     task_id="validate_tsne_config",
+    #     python_callable=validate_dimensionality_config,
+    #     op_kwargs={
+    #         "dimensionally_alg_type": "tsne",
+    #         "dim_arg_hyperparams": tsne_dict,
+    #         "bucket_name": BUCKET_NAME,
+    #         "processed_prefix": PROCESSED_PREFIX,
+    #         "local_data_dir": LOCAL_DATA_DIR,
+    #     },
+    # )
+    #
+    # validate_umap = PythonOperator(
+    #     task_id="validate_umap_config",
+    #     python_callable=validate_dimensionality_config,
+    #     op_kwargs={
+    #         "dimensionally_alg_type": "tsne",
+    #         "dim_arg_hyperparams": umap_dict,
+    #         "bucket_name": BUCKET_NAME,
+    #         "processed_prefix": PROCESSED_PREFIX,
+    #         "local_data_dir": LOCAL_DATA_DIR,
+    #     },
+    # )
+    #
+    # create_pca = PythonOperator(
+    #     task_id="create_pca",
+    #     python_callable=_train_dim_model,
+    #     op_kwargs={
+    #         "dimensionally_alg_type": "pca",
+    #         "dim_arg_hyperparams": pca_dict,
+    #         "bucket_name": BUCKET_NAME,
+    #         "processed_prefix": PROCESSED_PREFIX,
+    #         "local_data_dir": LOCAL_DATA_DIR,
+    #     },
+    # )
+    #
+    # create_tsne = PythonOperator(
+    #     task_id="create_tsne",
+    #     python_callable=_train_dim_model,
+    #     op_kwargs={
+    #         "dimensionally_alg_type": "tsne",
+    #         "dim_arg_hyperparams": tsne_dict,
+    #         "bucket_name": BUCKET_NAME,
+    #         "processed_prefix": PROCESSED_PREFIX,
+    #         "local_data_dir": LOCAL_DATA_DIR,
+    #     },
+    # )
+    #
+    # create_umap = PythonOperator(
+    #     task_id="create_umap",
+    #     python_callable=_train_dim_model,
+    #     op_kwargs={
+    #         "dimensionally_alg_type": "umap",
+    #         "dim_arg_hyperparams": umap_dict,
+    #         "bucket_name": BUCKET_NAME,
+    #         "processed_prefix": PROCESSED_PREFIX,
+    #         "local_data_dir": LOCAL_DATA_DIR,
+    #     },
+    # )
 
-    create_tsne = PythonOperator(
-        task_id="create_tsne",
-        python_callable=_train_dim_model,
-        op_kwargs={
-            "dimensionally_alg_type": "tsne",
-            "dim_arg_hyperparams": tsne_dict,
-            "bucket_name": BUCKET_NAME,
-            "processed_prefix": PROCESSED_PREFIX,
-            "local_data_dir": LOCAL_DATA_DIR,
-        },
-    )
+    train_dim_tasks = {}
 
-    create_umap = PythonOperator(
-        task_id="create_umap",
-        python_callable=_train_dim_model,
-        op_kwargs={
-            "dimensionally_alg_type": "umap",
-            "dim_arg_hyperparams": umap_dict,
-            "bucket_name": BUCKET_NAME,
-            "processed_prefix": PROCESSED_PREFIX,
-            "local_data_dir": LOCAL_DATA_DIR,
-        },
-    )
+    for alg_name, hyperparams in DIM_ALGORITHMS.items():
+        train_dim_tasks[alg_name] = build_dim_tasks(
+            alg_name=alg_name,
+            hyperparams=hyperparams,
+            preprocess_task=preprocess_mri_images,
+        )
+
+
 
     concat_y = PythonOperator(
         task_id="concat_y",
@@ -132,18 +188,17 @@ with dag:
         },
     )
 
+    # download_mri_dataset >> upload_images_to_s3 >> preprocess_mri_images
+    #
+    # preprocess_mri_images >> validate_pca >> create_pca
+    # preprocess_mri_images >> validate_tsne >> create_tsne
+    # preprocess_mri_images >> validate_umap >> create_umap
+    # preprocess_mri_images >> concat_y
+    #
+    # create_pca >> [train_logreg_pca, train_svm_pca]
+
     download_mri_dataset >> upload_images_to_s3 >> preprocess_mri_images
 
-    preprocess_mri_images >> [
-        create_pca,
-        create_tsne,
-        create_umap,
-        concat_y,
-        # create_TDA,
-        # train_CNN
-    ]
+    preprocess_mri_images >> concat_y
 
-    create_pca >> [train_logreg_pca, train_svm_pca]
-    # create_tsne >> [train_logreg, train_svm]
-    # create_umap >> [train_logreg, train_svm]
-    # create_TDA >> [train_logreg, train_svm]
+    train_dim_tasks["pca"] >> [train_logreg_pca, train_svm_pca]
