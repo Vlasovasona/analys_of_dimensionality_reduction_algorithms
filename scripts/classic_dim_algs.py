@@ -37,13 +37,6 @@ def load_data_from_s3(bucket_name: str,
         botocore.exceptions.ClientError: При ошибках S3 (бакет не найден, нет прав)
         FileNotFoundError: Если не удалось скачать файлы
     """
-    if not bucket_name:
-        raise ValueError("bucket_name не может быть пустым")
-    if not processed_prefix:
-        raise ValueError("processed_prefix не может быть пустым")
-    if not local_data_dir:
-        raise ValueError("local_data_dir не может быть пустым")
-
     try:
         s3 = S3Hook(aws_conn_id="s3")
         logger.info("Подключение к S3 успешно")
@@ -219,20 +212,19 @@ def _train_dim_model(
         if dimensionally_alg_type not in valid_algorithms:
             raise ValueError(f"Неизвестный тип алгоритма: {dimensionally_alg_type}. Допустимые значения: {' '.join(valid_algorithms)}")
 
-        if not isinstance(dimensionally_alg_type, str):
-            raise ValueError(f"Некорректный тип переменной: dimensionally_alg_type. "
-                             f"Допустимо использовать только строковую переменную")
-
         if not dim_arg_hyperparams:
             raise ValueError("dim_arg_hyperparams не может быть пустым")
 
-        if not bucket_name:
+        if not isinstance(dim_arg_hyperparams, dict):
+            raise ValueError("Неверный тип переменной dim_arg_hyperparams, ожидался словарь")
+
+        if not bucket_name or bucket_name.rstrip() == "":
             raise ValueError("bucket_name не может быть пустым")
 
-        if not processed_prefix:
+        if not processed_prefix or processed_prefix.rstrip() == "":
             raise ValueError("processed_prefix не может быть пустым")
 
-        if not local_data_dir:
+        if not local_data_dir or local_data_dir.rstrip() == "":
             raise ValueError("local_data_dir не может быть пустым")
 
         # Проверка обязательных параметров для каждого алгоритма
