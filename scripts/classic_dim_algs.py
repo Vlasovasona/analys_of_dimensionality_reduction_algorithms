@@ -100,7 +100,7 @@ def load_data_from_s3(bucket_name: str,
 
 def _load_and_concat_targets_from_s3(bucket_name: str,
                                     processed_prefix: str,
-                                    local_data_dir: str):
+                                    local_data_dir: str) -> None:
     """
     Загружает батчи targets в память и соединяет для обработки алгоритмом
 
@@ -185,7 +185,7 @@ def _train_dim_model(
     local_data_dir: str,
     mlflow_experiment_name: str = "default_name",
     mlflow_uri: str = "http://mlflow:5000",
-):
+) -> None:
     """
     Универсальная функция обучения классического алгоритма понижения размерности
 
