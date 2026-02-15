@@ -20,7 +20,7 @@ def _download_mri_dataset():
     try:
         path = kagglehub.dataset_download("fernando2rad/brain-tumor-mri-images-44c")
     except Exception as e:
-        print(f"Failed dataset download: {e}")
+        print(f"Ошибка загрузки датасета: {e}")
 
     os.makedirs(DATA_DIR, exist_ok=True)  # создает целевой каталог
     for item in os.listdir(path):  # берет все содержимое скачанного датасета (item - имя элемента, не полный путь)
@@ -96,7 +96,7 @@ def _preprocess_mri_images():
                 batch_X, batch_y = [], []
                 batch_id += 1
         except Exception as e:
-            print(f"ERROR processing {key}: {e}")
+            print(f"Ошибка обработки {key}: {e}")
 
     if batch_X:
         _save_batch(batch_X, batch_y, batch_id, s3)
