@@ -181,8 +181,8 @@ def _train_dim_model(
     bucket_name: str,
     processed_prefix: str,
     local_data_dir: str,
-    mlflow_experiment_name: str = "default_name",
-    mlflow_uri: str = "http://mlflow:5000",
+    mlflow_experiment_name: str,
+    mlflow_uri: str,
 ) -> None:
     """
     Универсальная функция обучения классического алгоритма понижения размерности
@@ -258,9 +258,6 @@ def _train_dim_model(
 
         elif dimensionally_alg_type == "TDA":  # реализовать!
             mlflow.log_param("TDA", "TDA")
-
-        else:
-            ValueError(f"Unknown dimensionally algorithm type: {dimensionally_alg_type}")
 
         if model is not None:
             mlflow.sklearn.log_model(model, f"dimensionally_alg_type")
