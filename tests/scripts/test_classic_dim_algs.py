@@ -497,44 +497,277 @@ class TestLoadAndConcatTargetsFromS3:
         with pytest.raises(ClientError):
             _load_and_concat_targets_from_s3("test-bucket", "mri", "test_dir")
 
-# class TestTrainDimModel:
-#     @patch("scripts.classic_dim_algs.S3Hook")
-#     @patch("scripts.classic_dim_algs.os.makedirs")
-#     @patch("scripts.classic_dim_algs.np.load")
-#     @patch("scripts.classic_dim_algs.Path.mkdir")
-#     def test_empty_loaded_x_array(self,
-#                                   mock_path_mkdir,
-#                                   mock_np_load,
-#                                   mock_makedirs,
-#                                   mock_s3_hook):
-#         mock_s3 = MagicMock()
-#         mock_s3_hook.return_value = mock_s3
-#
-#         mock_s3.list_keys.return_value = [
-#             "mri/processed/X_batch_1.npy",
-#             "mri/processed/X_batch_2.npy",
-#             "mri/processed/y_batch_1.npy",
-#         ]
-#
-#         mock_s3_conn = MagicMock()
-#         mock_s3.get_conn.return_value = mock_s3_conn
-#         mock_s3_conn.download_file.return_value = None
-#
-#         mock_np_load.side_effect = [
-#             np.array([]),
-#             np.array([1, 2, 3]),
-#             np.array([0, 1, 0])
-#         ]
-#
-#         with pytest.raises(ValueError, match="Загружен пустой массив X"):
-#             _train_dim_model(
-#                 dimensionally_alg_type="pca",
-#                 dim_arg_hyperparams={"pca_components": 2},  # 👈 ИСПРАВЛЕНО!
-#                 bucket_name="mri",
-#                 processed_prefix="processed",
-#                 local_data_dir="test_dir",
-#                 mlflow_experiment_name="default_name",
-#                 mlflow_uri="http://mlflow:5000",
-#             )
-#
-#         mock_s3.load_file.assert_not_called()
+class TestTrainDimModel:
+    def setup_method(self):
+        self.FAKE_X = np.random.rand(10, 5)
+        self.FAKE_Y = np.random.randint(0, 2, size=10)
+
+    @patch("scripts.classic_dim_algs.os.remove")
+    @patch("scripts.classic_dim_algs.np.save")
+    @patch("scripts.classic_dim_algs.S3Hook")
+    @patch("scripts.classic_dim_algs.mlflow")
+    @patch("scripts.classic_dim_algs.validate_loaded_arrays")
+    @patch("scripts.classic_dim_algs.load_data_from_s3")
+    def test_train_dim_model_pca_success(
+            self,
+            mock_load_data,
+            mock_validate,
+            mock_mlflow,
+            mock_s3_hook,
+            mock_save,
+            mock_remove,
+    ):
+        """Тест: успешное обучение pca алгоритма"""
+        mock_load_data.return_value = (self.FAKE_X, self.FAKE_Y)
+
+        _train_dim_model(
+            dimensionally_alg_type="pca",
+            dim_arg_hyperparams={"pca_components": 2},
+            bucket_name="test-bucket",
+            processed_prefix="mri",
+            local_data_dir="test_dir",
+            mlflow_experiment_name="test-exp",
+            mlflow_uri="http://mlflow",
+        )
+
+        mock_load_data.assert_called_once()
+        mock_validate.assert_called_once_with(self.FAKE_X, self.FAKE_Y)
+        mock_mlflow.start_run.assert_called_once()
+        mock_save.assert_called_once()
+        mock_s3_hook.return_value.load_file.assert_called_once()
+        mock_remove.assert_called_once()
+
+    @patch("scripts.classic_dim_algs.os.remove")
+    @patch("scripts.classic_dim_algs.np.save")
+    @patch("scripts.classic_dim_algs.S3Hook")
+    @patch("scripts.classic_dim_algs.mlflow")
+    @patch("scripts.classic_dim_algs.validate_loaded_arrays")
+    @patch("scripts.classic_dim_algs.load_data_from_s3")
+    def test_train_dim_model_tsne_success(
+            self,
+            mock_load_data,
+            mock_validate,
+            mock_mlflow,
+            mock_s3_hook,
+            mock_save,
+            mock_remove,
+    ):
+        """Тест: успешное обучение t-SNE"""
+        mock_load_data.return_value = (self.FAKE_X, self.FAKE_Y)
+
+        tsne_params = {
+            "n_components": 2,
+            "perplexity": 5,
+            "early_exaggeration": 12,
+            "learning_rate": "auto",
+        }
+
+        _train_dim_model(
+            dimensionally_alg_type="tsne",
+            dim_arg_hyperparams=tsne_params,
+            bucket_name="test-bucket",
+            processed_prefix="mri",
+            local_data_dir="test_dir",
+            mlflow_experiment_name="test-exp",
+            mlflow_uri="http://mlflow",
+        )
+
+        mock_save.assert_called_once()
+        mock_s3_hook.return_value.load_file.assert_called_once()
+
+    @patch("scripts.classic_dim_algs.TSNE")
+    @patch("scripts.classic_dim_algs.load_data_from_s3")
+    @patch("scripts.classic_dim_algs.validate_loaded_arrays")
+    def test_train_dim_model_tsne_runtime_error(
+            self,
+            mock_validate,
+            mock_load_data,
+            mock_tsne,
+    ):
+        """Тест: ошибка обучения t-SNE"""
+        mock_load_data.return_value = (self.FAKE_X, self.FAKE_Y)
+        mock_tsne.side_effect = Exception("Boom")
+
+        with pytest.raises(RuntimeError, match="Ошибка обучения t-SNE"):
+            _train_dim_model(
+                "tsne",
+                {
+                    "n_components": 2,
+                    "perplexity": 5,
+                    "early_exaggeration": 12,
+                    "learning_rate": "auto",
+                },
+                "bucket",
+                "prefix",
+                "dir",
+                "exp",
+                "uri",
+            )
+
+    @patch("scripts.classic_dim_algs.os.remove")
+    @patch("scripts.classic_dim_algs.np.save")
+    @patch("scripts.classic_dim_algs.S3Hook")
+    @patch("scripts.classic_dim_algs.mlflow")
+    @patch("scripts.classic_dim_algs.validate_loaded_arrays")
+    @patch("scripts.classic_dim_algs.load_data_from_s3")
+    def test_train_dim_model_umap_success(
+            self,
+            mock_load_data,
+            mock_validate,
+            mock_mlflow,
+            mock_s3_hook,
+            mock_save,
+            mock_remove,
+    ):
+        """Тест: успешное обучение umap"""
+        mock_load_data.return_value = (self.FAKE_X, self.FAKE_Y)
+
+        umap_params = {
+            "n_neighbors": 15,
+            "min_dist": 0.1,
+            "n_components": 2,
+            "metric": "euclidean",
+            "spread": 1.0,
+            "low_memory": True,
+            "init": "spectral",
+        }
+
+        _train_dim_model(
+            dimensionally_alg_type="umap",
+            dim_arg_hyperparams=umap_params,
+            bucket_name="test-bucket",
+            processed_prefix="mri",
+            local_data_dir="test_dir",
+            mlflow_experiment_name="test-exp",
+            mlflow_uri="http://mlflow",
+        )
+
+        mock_save.assert_called_once()
+        mock_s3_hook.return_value.load_file.assert_called_once()
+
+    @patch("scripts.classic_dim_algs.UMAP")
+    @patch("scripts.classic_dim_algs.load_data_from_s3")
+    @patch("scripts.classic_dim_algs.validate_loaded_arrays")
+    def test_train_dim_model_umap_runtime_error(
+            self,
+            mock_validate,
+            mock_load_data,
+            mock_tsne,
+    ):
+        """Тест: ошибка обучения umap"""
+        mock_load_data.return_value = (self.FAKE_X, self.FAKE_Y)
+        mock_tsne.side_effect = Exception("Boom")
+
+        with pytest.raises(RuntimeError, match="Ошибка обучения UMAP"):
+            _train_dim_model(
+                "umap",
+                {
+                    "n_neighbors": 15,
+                    "min_dist": 0.1,
+                    "n_components": 2,
+                    "metric": "euclidean",
+                    "spread": 1.0,
+                    "low_memory": True,
+                    "init": "spectral",
+                },
+                "bucket",
+                "prefix",
+                "dir",
+                "exp",
+                "uri",
+            )
+
+    @patch("scripts.classic_dim_algs.os.remove")
+    @patch("scripts.classic_dim_algs.np.save")
+    @patch("scripts.classic_dim_algs.S3Hook")
+    @patch("scripts.classic_dim_algs.logger")
+    @patch("scripts.classic_dim_algs.mlflow")
+    @patch("scripts.classic_dim_algs.validate_loaded_arrays")
+    @patch("scripts.classic_dim_algs.load_data_from_s3")
+    def test_mlflow_log_param_error_is_caught(
+            self,
+            mock_load_data,
+            mock_validate,
+            mock_mlflow,
+            mock_logger,
+            mock_s3_hook,
+            mock_save,
+            mock_remove,
+    ):
+        mock_load_data.return_value = (self.FAKE_X, self.FAKE_Y)
+
+        mock_mlflow.start_run.return_value.__enter__.return_value = None
+        mock_mlflow.start_run.return_value.__exit__.return_value = None
+
+        mock_mlflow.log_param.side_effect = [
+            None,
+            Exception("mlflow error"),
+        ]
+
+        # act
+        _train_dim_model(
+            dimensionally_alg_type="pca",
+            dim_arg_hyperparams={"pca_components": 2},
+            bucket_name="test-bucket",
+            processed_prefix="mri",
+            local_data_dir="test_dir",
+            mlflow_experiment_name="test-exp",
+            mlflow_uri="http://mlflow",
+        )
+
+        # assert
+        mock_logger.warning.assert_any_call(
+            "Не удалось залогировать параметр pca_components: mlflow error"
+        )
+
+        mock_save.assert_called_once()
+        mock_s3_hook.return_value.load_file.assert_called_once()
+        mock_remove.assert_called_once()
+
+    @patch("scripts.classic_dim_algs.os.remove")
+    @patch("scripts.classic_dim_algs.np.save")
+    @patch("scripts.classic_dim_algs.S3Hook")
+    @patch("scripts.classic_dim_algs.logger")
+    @patch("scripts.classic_dim_algs.mlflow")
+    @patch("scripts.classic_dim_algs.validate_loaded_arrays")
+    @patch("scripts.classic_dim_algs.load_data_from_s3")
+    def test_n_components_overweight_max(
+            self,
+            mock_load_data,
+            mock_validate,
+            mock_mlflow,
+            mock_logger,
+            mock_s3_hook,
+            mock_save,
+            mock_remove,
+    ):
+        mock_load_data.return_value = (self.FAKE_X, self.FAKE_Y)
+
+        mock_mlflow.start_run.return_value.__enter__.return_value = None
+        mock_mlflow.start_run.return_value.__exit__.return_value = None
+
+        mock_mlflow.log_param.return_value = None
+
+        _train_dim_model(
+            dimensionally_alg_type="pca",
+            dim_arg_hyperparams={"pca_components": 100},
+            bucket_name="test-bucket",
+            processed_prefix="mri",
+            local_data_dir="test_dir",
+            mlflow_experiment_name="test-exp",
+            mlflow_uri="http://mlflow",
+        )
+
+
+        mock_logger.warning.assert_any_call(
+            "pca_components=100 больше максимально возможного 5. Уменьшено до 5"
+        )
+
+        mock_mlflow.log_param.assert_any_call("pca_components", 5)
+
+        mock_save.assert_called_once()
+        mock_s3_hook.return_value.load_file.assert_called_once()
+        mock_remove.assert_called_once()
+
+
+
