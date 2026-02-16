@@ -13,7 +13,7 @@ from umap import UMAP
 from sklearn.manifold import TSNE
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 
-from parameters_validation.validate_classic_dim_algs import validate_dimensionality_config, validate_loaded_arrays
+from scripts.parameters_validation.validate_classic_dim_algs import validate_dimensionality_config, validate_loaded_arrays
 
 logger = logging.getLogger(__name__)
 
