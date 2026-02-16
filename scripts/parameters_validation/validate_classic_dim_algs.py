@@ -8,9 +8,32 @@ def validate_dimensionality_config(
     processed_prefix: str,
     local_data_dir: str,
 ) -> None:
+    """
+        Валидирует конфигурацию алгоритма снижения размерности и связанные параметры.
+
+        Поддерживаемые алгоритмы:
+        - pca
+        - tsne
+        - umap
+        - TDA (В РАЗРАБОТКЕ)
+
+        Args:
+            dimensionally_alg_type (str):
+                Тип алгоритма снижения размерности.
+            dim_arg_hyperparams (Dict):
+                Словарь гиперпараметров выбранного алгоритма.
+            bucket_name (str):
+                Имя бакета для хранения данных.
+            processed_prefix (str):
+                Префикс директории для обработанных данных.
+            local_data_dir (str):
+                Локальная директория для хранения данных.
+
+        Returns: None
+    """
     valid_algorithms = {"pca", "tsne", "umap", "TDA"}
 
-    if not dimensionally_alg_type:
+    if not dimensionally_alg_type or not dimensionally_alg_type.strip():
         raise ValueError("dimensionally_alg_type не может быть пустым")
 
     if dimensionally_alg_type not in valid_algorithms:
@@ -41,18 +64,35 @@ def validate_dimensionality_config(
         required = {"n_components", "perplexity", "early_exaggeration", "learning_rate"}
         missing = required - dim_arg_hyperparams.keys()
         if missing:
-            raise ValueError(f"Для t-SNE отсутствуют параметры: {missing}")
+            missing_str = ", ".join(sorted(missing))
+            raise ValueError(
+                f"Для t-SNE отсутствуют параметры: {missing_str}"
+            )
 
     elif dimensionally_alg_type == "umap":
         required = {"n_neighbors", "min_dist", "n_components", "metric", "spread"}
         missing = required - dim_arg_hyperparams.keys()
         if missing:
-            raise ValueError(f"Для UMAP отсутствуют параметры: {missing}")
+            missing_str = ", ".join(sorted(missing))
+            raise ValueError(
+                f"Для UMAP отсутствуют параметры: {missing_str}"
+            )
 
     return None
 
 def validate_loaded_arrays(X: np.ndarray,
                            y: np.ndarray) -> None:
+    """
+        Проверяет корректность загруженных массивов признаков и меток.
+
+        Args:
+            X (np.ndarray):
+                Массив признаков (shape: [n_samples, n_features]).
+            y (np.ndarray):
+                Массив целевых меток (shape: [n_samples]).
+
+        Returns: None
+    """
     if X.size == 0:
         raise ValueError("Загружен пустой массив X")
 
