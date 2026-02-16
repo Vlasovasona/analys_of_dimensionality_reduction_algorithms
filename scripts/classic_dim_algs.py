@@ -46,8 +46,6 @@ def load_data_from_s3(bucket_name: str,
         raise ConnectionError("Отсутствуют учетные данные AWS") from None
     except EndpointConnectionError:
         raise ConnectionError("Нет подключения к AWS эндпоинту")
-    except Exception as e:
-        raise ConnectionError(f"Ошибка подключения к S3: {e}") from e
 
     os.makedirs(f"/tmp/{local_data_dir}", exist_ok=True)
 
@@ -56,7 +54,7 @@ def load_data_from_s3(bucket_name: str,
             bucket_name, f"{processed_prefix}/processed/"
         )  # получили список всех файлов внутри PROCESSED_PREFIX
         if not keys:
-            raise ValueError(
+            raise RuntimeError(
                 f"В бакете {bucket_name} нет файлов по префиксу {processed_prefix}/processed/"
             )
         logger.info(f"Найдено {len(keys)} файлов в s3")
