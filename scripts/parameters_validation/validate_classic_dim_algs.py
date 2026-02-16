@@ -4,9 +4,6 @@ import numpy as np
 def validate_dimensionality_config(
     dimensionally_alg_type: str,
     dim_arg_hyperparams: Dict,
-    bucket_name: str,
-    processed_prefix: str,
-    local_data_dir: str,
 ) -> None:
     """
         Валидирует конфигурацию алгоритма снижения размерности и связанные параметры.
@@ -22,12 +19,6 @@ def validate_dimensionality_config(
                 Тип алгоритма снижения размерности.
             dim_arg_hyperparams (Dict):
                 Словарь гиперпараметров выбранного алгоритма.
-            bucket_name (str):
-                Имя бакета для хранения данных.
-            processed_prefix (str):
-                Префикс директории для обработанных данных.
-            local_data_dir (str):
-                Локальная директория для хранения данных.
 
         Returns: None
     """
@@ -44,15 +35,6 @@ def validate_dimensionality_config(
 
     if not isinstance(dim_arg_hyperparams, dict) or not dim_arg_hyperparams:
         raise ValueError("dim_arg_hyperparams должен быть непустым словарем")
-
-    if not bucket_name or not bucket_name.strip():
-        raise ValueError("bucket_name не может быть пустым")
-
-    if not processed_prefix or not processed_prefix.strip():
-        raise ValueError("processed_prefix не может быть пустым")
-
-    if not local_data_dir or not local_data_dir.strip():
-        raise ValueError("local_data_dir не может быть пустым")
 
     if dimensionally_alg_type == "pca":
         if "pca_components" not in dim_arg_hyperparams:

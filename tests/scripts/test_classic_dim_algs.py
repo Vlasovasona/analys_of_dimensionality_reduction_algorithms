@@ -336,6 +336,26 @@ class TestLoadAndConcatTargetsFromS3:
                 local_data_dir="test_dir"
             )
 
+    @patch("scripts.classic_dim_algs.os.makedirs")
+    @patch("scripts.classic_dim_algs.S3Hook")
+    def test_empty_bucket(self, mock_s3_hook, mock_makedirs):
+        """Тест: если бакет пустой, должна вызываться ошибка RuntimeError"""
+
+        mock_s3 = MagicMock()
+        mock_s3.list_keys.return_value = []
+        mock_s3_hook.return_value = mock_s3
+
+        with pytest.raises(
+                RuntimeError,
+                match="В бакете test-bucket нет файлов по префиксу mri/processed/"
+        ):
+            _load_and_concat_targets_from_s3(
+                bucket_name="test-bucket",
+                processed_prefix="mri",
+                local_data_dir="test_dir"
+            )
+
+
     @patch("scripts.classic_dim_algs.S3Hook")
     def test_bucket_not_found(self, mock_s3_hook):
         """Тест: нет доступа к бакету -> PermissionError"""
@@ -478,43 +498,43 @@ class TestLoadAndConcatTargetsFromS3:
             _load_and_concat_targets_from_s3("test-bucket", "mri", "test_dir")
 
 # class TestTrainDimModel:
-    # @patch("scripts.classic_dim_algs.S3Hook")
-    # @patch("scripts.classic_dim_algs.os.makedirs")
-    # @patch("scripts.classic_dim_algs.np.load")
-    # @patch("scripts.classic_dim_algs.Path.mkdir")
-    # def test_empty_loaded_x_array(self,
-    #                               mock_path_mkdir,
-    #                               mock_np_load,
-    #                               mock_makedirs,
-    #                               mock_s3_hook):
-    #     mock_s3 = MagicMock()
-    #     mock_s3_hook.return_value = mock_s3
-    #
-    #     mock_s3.list_keys.return_value = [
-    #         "mri/processed/X_batch_1.npy",
-    #         "mri/processed/X_batch_2.npy",
-    #         "mri/processed/y_batch_1.npy",
-    #     ]
-    #
-    #     mock_s3_conn = MagicMock()
-    #     mock_s3.get_conn.return_value = mock_s3_conn
-    #     mock_s3_conn.download_file.return_value = None
-    #
-    #     mock_np_load.side_effect = [
-    #         np.array([]),
-    #         np.array([1, 2, 3]),
-    #         np.array([0, 1, 0])
-    #     ]
-    #
-    #     with pytest.raises(ValueError, match="Загружен пустой массив X"):
-    #         _train_dim_model(
-    #             dimensionally_alg_type="pca",
-    #             dim_arg_hyperparams={"pca_components": 2},  # 👈 ИСПРАВЛЕНО!
-    #             bucket_name="mri",
-    #             processed_prefix="processed",
-    #             local_data_dir="test_dir",
-    #             mlflow_experiment_name="default_name",
-    #             mlflow_uri="http://mlflow:5000",
-    #         )
-    #
-    #     mock_s3.load_file.assert_not_called()
+#     @patch("scripts.classic_dim_algs.S3Hook")
+#     @patch("scripts.classic_dim_algs.os.makedirs")
+#     @patch("scripts.classic_dim_algs.np.load")
+#     @patch("scripts.classic_dim_algs.Path.mkdir")
+#     def test_empty_loaded_x_array(self,
+#                                   mock_path_mkdir,
+#                                   mock_np_load,
+#                                   mock_makedirs,
+#                                   mock_s3_hook):
+#         mock_s3 = MagicMock()
+#         mock_s3_hook.return_value = mock_s3
+#
+#         mock_s3.list_keys.return_value = [
+#             "mri/processed/X_batch_1.npy",
+#             "mri/processed/X_batch_2.npy",
+#             "mri/processed/y_batch_1.npy",
+#         ]
+#
+#         mock_s3_conn = MagicMock()
+#         mock_s3.get_conn.return_value = mock_s3_conn
+#         mock_s3_conn.download_file.return_value = None
+#
+#         mock_np_load.side_effect = [
+#             np.array([]),
+#             np.array([1, 2, 3]),
+#             np.array([0, 1, 0])
+#         ]
+#
+#         with pytest.raises(ValueError, match="Загружен пустой массив X"):
+#             _train_dim_model(
+#                 dimensionally_alg_type="pca",
+#                 dim_arg_hyperparams={"pca_components": 2},  # 👈 ИСПРАВЛЕНО!
+#                 bucket_name="mri",
+#                 processed_prefix="processed",
+#                 local_data_dir="test_dir",
+#                 mlflow_experiment_name="default_name",
+#                 mlflow_uri="http://mlflow:5000",
+#             )
+#
+#         mock_s3.load_file.assert_not_called()
