@@ -3,7 +3,7 @@ from airflow.operators.python import PythonOperator
 
 # from airflow.utils.dates import days_ago
 import pendulum
-from scripts.data_extraction.mri import _download_mri_dataset, _upload_images_to_s3, _preprocess_mri_images
+from scripts.data_extraction.mri import _download_mri_dataset, _upload_images_to_s3, _preprocess_mri_images, _preprocess_mri_images_to_tda
 from scripts.train_models import _train_model
 from scripts.classic_dim_algs import _train_dim_model, _prepare_train_test_datasets
 from scripts.parameters_validation.validate_classic_dim_algs import validate_dimensionality_config
@@ -74,6 +74,11 @@ with dag:
     preprocess_mri_images = PythonOperator(
         task_id="preprocess_mri_images",
         python_callable=_preprocess_mri_images,
+    )
+
+    preprocess_mri_images_tda = PythonOperator(
+        task_id="preprocess_mri_images_tda",
+        python_callable=_preprocess_mri_images_to_tda,
     )
 
     prepare_train_test = PythonOperator(
@@ -153,7 +158,12 @@ with dag:
         },
     )
 
-    validate_dag_config >> download_mri_dataset >> upload_images_to_s3 >> preprocess_mri_images >> prepare_train_test
+    validate_dag_config >> download_mri_dataset >> upload_images_to_s3
+
+    upload_images_to_s3 >> preprocess_mri_images
+    upload_images_to_s3 >> preprocess_mri_images_tda
+
+    preprocess_mri_images >> prepare_train_test
 
     train_dim_tasks["pca"] >> [train_logreg_pca, train_svm_pca]
     train_dim_tasks["umap"] >> [train_logreg_umap, train_svm_umap]
