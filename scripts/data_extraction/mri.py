@@ -60,6 +60,33 @@ def _save_batch(X, y, batch_id, s3):
     os.remove(y_path)
 
 
+def _save_batch_tda(X, y, batch_id, s3):
+    X = np.asarray(X, dtype=np.float32)  # (B, H, W, 3)
+    y = np.asarray(y, dtype=np.int64)
+
+    X_path = f"{TMP_DIR}/X_{batch_id:04d}.npy"
+    y_path = f"{TMP_DIR}/y_{batch_id:04d}.npy"
+
+    np.save(X_path, X)
+    np.save(y_path, y)
+
+    s3.load_file(
+        filename=X_path,
+        key=f"{PROCESSED_PREFIX}/TDA/X_{batch_id:04d}.npy",
+        bucket_name=BUCKET_NAME,
+        replace=True
+    )
+    s3.load_file(
+        filename=y_path,
+        key=f"{PROCESSED_PREFIX}/TDA/y_{batch_id:04d}.npy",
+        bucket_name=BUCKET_NAME,
+        replace=True
+    )
+
+    os.remove(X_path)
+    os.remove(y_path)
+
+
 def _preprocess_mri_images():
     """Нормализация, resize картинок, формирование батчей, загрузка обработанных данных в S3"""
     import cv2
@@ -107,3 +134,62 @@ def _preprocess_mri_images():
         bucket_name=BUCKET_NAME,
         replace=True,
     )
+
+def preprocess_image(img, img_size):
+    import cv2
+
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.resize(gray, (img_size, img_size))
+    gray = gray.astype(np.float32) / 255.0
+
+    sobel_x = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+    sobel_y = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+    sobel = np.sqrt(sobel_x**2 + sobel_y**2)
+    sobel /= (sobel.max() + 1e-8)
+
+    gaussian = cv2.GaussianBlur(gray, (5, 5), sigmaX=1)
+    gaussian /= (gaussian.max() + 1e-8)
+
+    # объединяем в три канала
+    return np.stack([gray, sobel, gaussian], axis=-1)
+
+def _preprocess_mri_images_to_tda():
+    import cv2
+
+    os.makedirs(TMP_DIR, exist_ok=True)
+    s3 = S3Hook(aws_conn_id="s3")
+
+    keys = [k for k in s3.list_keys(BUCKET_NAME, RAW_PREFIX) if k.lower().endswith((".jpg", ".png", ".jpeg"))]
+    class_names = sorted({k.split("/")[2] for k in keys})
+    class_to_idx = {cls: i for i, cls in enumerate(class_names)}
+
+    batch_X, batch_y = [], []
+    batch_id = 0
+
+    for key in keys:
+        try:
+            obj = s3.get_key(key=key, bucket_name=BUCKET_NAME)
+            buf = io.BytesIO()
+            obj.download_fileobj(buf)
+            buf.seek(0)
+
+            img = cv2.imdecode(np.frombuffer(buf.read(), np.uint8), cv2.IMREAD_COLOR)
+            if img is None:
+                continue
+
+            x = preprocess_image(img, IMG_SIZE)  # (H, W, 3)
+            y = class_to_idx[key.split("/")[2]]
+
+            batch_X.append(x)
+            batch_y.append(y)
+
+            if len(batch_X) == BATCH_SIZE:
+                _save_batch_tda(batch_X, batch_y, batch_id, s3)
+                batch_X, batch_y = [], []
+                batch_id += 1
+
+        except Exception as e:
+            print(f"Ошибка обработки {key}: {e}")
+
+    if batch_X:
+        _save_batch_tda(batch_X, batch_y, batch_id, s3)
