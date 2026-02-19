@@ -97,7 +97,6 @@ with dag:
         )
 
 
-
     train_logreg_pca = PythonOperator(
         task_id="train_logreg_pca",
         python_callable=_train_model,
@@ -126,6 +125,35 @@ with dag:
         },
     )
 
+    train_logreg_umap = PythonOperator(
+        task_id="train_logreg_umap",
+        python_callable=_train_model,
+        op_kwargs={
+            "dimensionally_alg_type": "umap",
+            "model_type": "logreg",
+            "bucket_name": BUCKET_NAME,
+            "processed_prefix": PROCESSED_PREFIX,
+            "local_data_dir": LOCAL_DATA_DIR,
+            "mlflow_experiment_name": "mri-brain-tumor",
+            "mlflow_uri": "http://mlflow:5000",
+        },
+    )
+
+    train_svm_umap = PythonOperator(
+        task_id="train_svm_umap",
+        python_callable=_train_model,
+        op_kwargs={
+            "dimensionally_alg_type": "umap",
+            "model_type": "svm",
+            "bucket_name": BUCKET_NAME,
+            "processed_prefix": PROCESSED_PREFIX,
+            "local_data_dir": LOCAL_DATA_DIR,
+            "mlflow_experiment_name": "mri-brain-tumor",
+            "mlflow_uri": "http://mlflow:5000",
+        },
+    )
+
     validate_dag_config >> download_mri_dataset >> upload_images_to_s3 >> preprocess_mri_images >> prepare_train_test
 
     train_dim_tasks["pca"] >> [train_logreg_pca, train_svm_pca]
+    train_dim_tasks["umap"] >> [train_logreg_umap, train_svm_umap]
