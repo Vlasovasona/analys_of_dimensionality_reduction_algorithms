@@ -2,15 +2,15 @@ pca_dict = {
     "pca_components": 120,
 }
 
-tsne_dict = {
-    "n_components": 2,
-    "perplexity": 30,
-    "early_exaggeration": 12,
-    "learning_rate": "auto",
-    "metric": "euclidean",
-    "init": "pca",
-    "angle": 0.5,
-}
+# tsne_dict = {
+#     "n_components": 2,
+#     "perplexity": 30,
+#     "early_exaggeration": 12,
+#     "learning_rate": "auto",
+#     "metric": "euclidean",
+#     "init": "pca",
+#     "angle": 0.5,
+# }
 
 umap_dict = {
     "n_neighbors": 15,
@@ -24,6 +24,5 @@ umap_dict = {
 
 DIM_ALGORITHMS = {
     "pca": pca_dict,
-    "tsne": tsne_dict,
     "umap": umap_dict,
 }
