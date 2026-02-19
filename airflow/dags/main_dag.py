@@ -3,17 +3,21 @@ from airflow.operators.python import PythonOperator
 
 # from airflow.utils.dates import days_ago
 import pendulum
-from scripts.data_extraction import _download_mri_dataset, _upload_images_to_s3, _preprocess_mri_images
+from scripts.data_extraction.mri import _download_mri_dataset, _upload_images_to_s3, _preprocess_mri_images
 from scripts.train_models import _train_model
-from scripts.classic_dim_algs import _train_dim_model, _load_and_concat_targets_from_s3
+from scripts.classic_dim_algs import _train_dim_model, _prepare_train_test_datasets
 from scripts.parameters_validation.validate_classic_dim_algs import validate_dimensionality_config
 from scripts.parameters_validation.dag_config_validation import validate_storage_config
-from scripts.dag_config import BUCKET_NAME, PROCESSED_PREFIX, LOCAL_DATA_DIR, DIM_ALGORITHMS
+from scripts.dag_config import BUCKET_NAME, PROCESSED_PREFIX, LOCAL_DATA_DIR
+from scripts.dim_algs_config import DIM_ALGORITHMS
+
+
 
 def build_dim_tasks(
     alg_name: str,
     hyperparams: dict,
     preprocess_task,
+    dag,
 ):
     validate_task = PythonOperator(
         task_id=f"validate_{alg_name}_config",
@@ -72,25 +76,27 @@ with dag:
         python_callable=_preprocess_mri_images,
     )
 
-    train_dim_tasks = {}
-
-    for alg_name, hyperparams in DIM_ALGORITHMS.items():
-        train_dim_tasks[alg_name] = build_dim_tasks(
-            alg_name=alg_name,
-            hyperparams=hyperparams,
-            preprocess_task=preprocess_mri_images,
-        )
-
-
-    concat_y = PythonOperator(
-        task_id="concat_y",
-        python_callable=_load_and_concat_targets_from_s3,
+    prepare_train_test = PythonOperator(
+        task_id="prepare_train_test_datasets",
+        python_callable=_prepare_train_test_datasets,
         op_kwargs={
             "bucket_name": BUCKET_NAME,
             "processed_prefix": PROCESSED_PREFIX,
             "local_data_dir": LOCAL_DATA_DIR,
         },
     )
+
+    train_dim_tasks = {}
+
+    for alg_name, hyperparams in DIM_ALGORITHMS.items():
+        train_dim_tasks[alg_name] = build_dim_tasks(
+            dag=dag,
+            alg_name=alg_name,
+            hyperparams=hyperparams,
+            preprocess_task=prepare_train_test,
+        )
+
+
 
     train_logreg_pca = PythonOperator(
         task_id="train_logreg_pca",
@@ -120,8 +126,6 @@ with dag:
         },
     )
 
-    validate_dag_config >> download_mri_dataset >> upload_images_to_s3 >> preprocess_mri_images
-
-    preprocess_mri_images >> concat_y
+    validate_dag_config >> download_mri_dataset >> upload_images_to_s3 >> preprocess_mri_images >> prepare_train_test
 
     train_dim_tasks["pca"] >> [train_logreg_pca, train_svm_pca]

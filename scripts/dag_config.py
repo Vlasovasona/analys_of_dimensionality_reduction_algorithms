@@ -1,3 +1,5 @@
 BUCKET_NAME = "mri-dataset"
 PROCESSED_PREFIX = "mri"
 LOCAL_DATA_DIR = "mri_train_data"
+MLFLOW_URI="http://mlflow:5000"
+MLFLOW_EXPERIMENT_NAME="mri-brain-tumor"

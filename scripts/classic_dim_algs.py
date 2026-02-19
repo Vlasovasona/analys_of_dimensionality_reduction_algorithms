@@ -8,6 +8,7 @@ import mlflow.sklearn
 from pathlib import Path
 from botocore.exceptions import ClientError, NoCredentialsError, EndpointConnectionError
 
+from sklearn.model_selection import train_test_split
 from sklearn.decomposition import PCA
 from umap import UMAP
 from sklearn.manifold import TSNE
@@ -17,162 +18,118 @@ from scripts.parameters_validation.validate_classic_dim_algs import validate_dim
 
 logger = logging.getLogger(__name__)
 
-def load_data_from_s3(bucket_name: str,
-                      processed_prefix: str,
-                      local_data_dir: str) -> Tuple[ndarray, ndarray]:
+def _prepare_train_test_datasets(
+    bucket_name: str,
+    processed_prefix: str,
+    local_data_dir: str,
+    test_size: float = 0.2,
+    random_state: int = 42,
+):
     """
-    Загружает батчи из S3 в память
-
-    Args:
-        bucket_name: Название S3 бакета
-        processed_prefix: Префикс пути к обработанным данным в бакете
-        local_data_dir: Имя локальной директории для временных файлов (создается в /tmp/)
-
-    Returns:
-        Tuple[ndarray, ndarray]: Кортеж из двух массивов numpy:
-            - X: Массив признаков размерности (n_samples, n_features)
-            - y: Массив меток классов размерности (n_samples,)
-
-    Raises:
-        ValueError: Если не найдены файлы с данными или бакет не существует
-        botocore.exceptions.NoCredentialsError: Если нет доступа к AWS
-        botocore.exceptions.ClientError: При ошибках S3 (бакет не найден, нет прав)
-        FileNotFoundError: Если не удалось скачать файлы
+    Загружает все батчи из S3, делает train/test split
+    и сохраняет итоговые датасеты обратно в S3
     """
-    try:
-        s3 = S3Hook(aws_conn_id="s3")
-        logger.info("Подключение к S3 успешно")
-    except NoCredentialsError:
-        raise ConnectionError("Отсутствуют учетные данные AWS") from None
-    except EndpointConnectionError:
-        raise ConnectionError("Нет подключения к AWS эндпоинту")
 
-    os.makedirs(f"/tmp/{local_data_dir}", exist_ok=True)
+    s3 = S3Hook(aws_conn_id="s3")
+    base_tmp = Path(f"/tmp/{local_data_dir}")
+    base_tmp.mkdir(parents=True, exist_ok=True)
 
-    try:
-        keys = s3.list_keys(
-            bucket_name, f"{processed_prefix}/processed/"
-        )  # получили список всех файлов внутри PROCESSED_PREFIX
-        if not keys:
-            raise RuntimeError(
-                f"В бакете {bucket_name} нет файлов по префиксу {processed_prefix}/processed/"
-            )
-        logger.info(f"Найдено {len(keys)} файлов в s3")
-    except ClientError as e:
-        error_code = e.response.get('Error', {}).get('Code', 'Unknown')
-        if error_code == 'NoSuchBucket':
-            raise ValueError(f"Бакет {bucket_name} не найден") from e
-        elif error_code == 'AccessDenied':
-            raise PermissionError(f"Нет доступа к бакету {bucket_name}") from e
-        else:
-            raise ConnectionError(f"Ошибка S3: {e}") from e
-    except Exception as e:
-        raise RuntimeError(f"Ошибка получения списка файлов: {e}") from e
+    keys = s3.list_keys(bucket_name, f"{processed_prefix}/processed/")
+    if not keys:
+        raise RuntimeError("Нет данных для split")
 
     X_list, y_list = [], []
 
-    for key in keys:  # цикл по файлам в S3
-        if key.endswith(".npy") and "X_" in key:  # если это один из батчей X
-            local_x = Path(f"/tmp/{local_data_dir}") / os.path.basename(key)
-            local_y = Path(f"/tmp/{local_data_dir}") / os.path.basename(key.replace("X_", "y_"))
+    for key in keys:
+        if key.endswith(".npy") and "X_" in key:
+            local_x = base_tmp / os.path.basename(key)
+            local_y = base_tmp / os.path.basename(key.replace("X_", "y_"))
 
-            # создаём директорию, если её нет
-            local_x.parent.mkdir(parents=True, exist_ok=True)
-            local_y.parent.mkdir(parents=True, exist_ok=True)
+            s3.get_conn().download_file(bucket_name, key, str(local_x))
+            s3.get_conn().download_file(bucket_name, key.replace("X_", "y_"), str(local_y))
 
-            # скачиваем батчи с данными для обучения и метками классов
-            s3.get_conn().download_file(Bucket=bucket_name, Key=key, Filename=str(local_x))
-            s3.get_conn().download_file(Bucket=bucket_name, Key=key.replace("X_", "y_"), Filename=str(local_y))
+            X_list.append(np.load(local_x))
+            y_list.append(np.load(local_y))
 
-            X = np.load(local_x)
-            y = np.load(local_y)
-
-            X_list.append(X)
-            y_list.append(y)
-
-    X = np.concatenate(X_list)  # склеиваем все батчи
+    X = np.concatenate(X_list).reshape(len(np.concatenate(X_list)), -1)
     y = np.concatenate(y_list)
 
-    return X.reshape(len(X), -1), y  # разворачиваем картинки в векторы
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=test_size,
+        random_state=random_state,
+        stratify=y,
+    )
 
+    # сохраняем локально
+    np.save(base_tmp / "X_train.npy", X_train)
+    np.save(base_tmp / "X_test.npy", X_test)
+    np.save(base_tmp / "y_train.npy", y_train)
+    np.save(base_tmp / "y_test.npy", y_test)
 
-def _load_and_concat_targets_from_s3(bucket_name: str,
-                                    processed_prefix: str,
-                                    local_data_dir: str) -> None:
+    # загружаем обратно в S3
+    for name in ["X_train.npy", "X_test.npy", "y_train.npy", "y_test.npy"]:
+        s3.load_file(
+            filename=str(base_tmp / name),
+            key=f"{processed_prefix}/final/{name}",
+            bucket_name=bucket_name,
+            replace=True,
+        )
+
+def load_train_test_from_s3(
+    bucket_name: str,
+    processed_prefix: str,
+    local_data_dir: str,
+) -> Tuple[ndarray, ndarray, ndarray, ndarray]:
     """
-    Загружает батчи targets в память и соединяет для обработки алгоритмом
+    Загружает train/test датасеты из S3
 
-    Args:
-        bucket_name: Название S3 бакета
-        processed_prefix: Префикс пути к обработанным данным в бакете
-        local_data_dir: Имя локальной директории для временных файлов (создается в /tmp/)
-
-    Returns: None
-
-    Raises:
-        ValueError: Если не найдены файлы с данными или бакет не существует
-        botocore.exceptions.NoCredentialsError: Если нет доступа к AWS
-        botocore.exceptions.ClientError: При ошибках S3 (бакет не найден, нет прав)
-        FileNotFoundError: Если не удалось скачать файлы
+    Returns:
+        X_train, X_test, y_train, y_test
     """
     try:
         s3 = S3Hook(aws_conn_id="s3")
         logger.info("Подключение к S3 успешно")
     except NoCredentialsError:
-        raise ConnectionError("Отсутствуют учетные данные AWS") from None
+        raise ConnectionError("Отсутствуют AWS credentials") from None
     except EndpointConnectionError:
-        raise ConnectionError("Нет подключения к AWS эндпоинту")
-    except Exception as e:
-        raise ConnectionError(f"Ошибка подключения к S3: {e}") from e
+        raise ConnectionError("Нет подключения к AWS endpoint")
 
+    base_tmp = Path(f"/tmp/{local_data_dir}")
+    base_tmp.mkdir(parents=True, exist_ok=True)
 
-    os.makedirs(f"/tmp/{local_data_dir}", exist_ok=True)
+    files = {
+        "X_train.npy": None,
+        "X_test.npy": None,
+        "y_train.npy": None,
+        "y_test.npy": None,
+    }
 
-    try:
-        keys = s3.list_keys(
-            bucket_name, f"{processed_prefix}/processed/"
-        )
-        if not keys:
-            raise ValueError(
-                f"В бакете {bucket_name} нет файлов по префиксу {processed_prefix}/processed/"
+    for name in files.keys():
+        s3_key = f"{processed_prefix}/final/{name}"
+        local_path = base_tmp / name
+
+        try:
+            s3.get_conn().download_file(
+                Bucket=bucket_name,
+                Key=s3_key,
+                Filename=str(local_path),
             )
-        logger.info(f"Найдено {len(keys)} файлов в s3")
-    except ClientError as e:
-        error_code = e.response.get('Error', {}).get('Code', 'Unknown')
-        if error_code == 'NoSuchBucket':
-            raise ValueError(f"Бакет {bucket_name} не найден") from e
-        elif error_code == 'AccessDenied':
-            raise PermissionError(f"Нет доступа к бакету {bucket_name}") from e
-        else:
-            raise ConnectionError(f"Ошибка S3: {e}") from e
-    except Exception as e:
-        raise RuntimeError(f"Ошибка получения списка файлов: {e}") from e
+            files[name] = np.load(local_path)
+            logger.info(f"Загружен {s3_key}")
+        except ClientError as e:
+            raise FileNotFoundError(f"Не найден файл {s3_key} в S3") from e
 
-    y_list = []
+    X_train = files["X_train.npy"].reshape(len(files["X_train.npy"]), -1)
+    X_test = files["X_test.npy"].reshape(len(files["X_test.npy"]), -1)
+    y_train = files["y_train.npy"]
+    y_test = files["y_test.npy"]
 
-    for key in keys:  # цикл по файлам в S3
-        if key.endswith(".npy") and "X_" in key:  # если это один из батчей X
-            local_y = Path(f"/tmp/{local_data_dir}") / os.path.basename(key.replace("X_", "y_"))
-            local_y.parent.mkdir(parents=True, exist_ok=True)
-            s3.get_conn().download_file(Bucket=bucket_name, Key=key.replace("X_", "y_"), Filename=str(local_y))
-            y = np.load(local_y)
-            y_list.append(y)
-    y = np.concatenate(y_list)
+    validate_loaded_arrays(X_train, y_train)
+    validate_loaded_arrays(X_test, y_test)
 
-    output_filename = f"y_transformed.npy"
-    np.save(output_filename, y)
-
-    # Загружаем файл в S3
-    s3 = S3Hook(aws_conn_id="s3")
-    s3.load_file(
-        filename=output_filename,
-        key=f"{processed_prefix}/transformed/{output_filename}",
-        bucket_name=bucket_name,
-        replace=True,
-    )
-
-    print(f"Файл {output_filename} успешно загружен в S3.")
-    os.remove(output_filename)
+    return X_train, X_test, y_train, y_test
 
 
 def _train_dim_model(
@@ -181,8 +138,6 @@ def _train_dim_model(
     bucket_name: str,
     processed_prefix: str,
     local_data_dir: str,
-    mlflow_experiment_name: str,
-    mlflow_uri: str,
 ) -> None:
     """
     Универсальная функция обучения классического алгоритма понижения размерности
@@ -203,58 +158,47 @@ def _train_dim_model(
         ConnectionError: При проблемах с подключением к AWS
         RuntimeError: При критических ошибках выполнения
     """
+    from scripts.dag_config import MLFLOW_URI, MLFLOW_EXPERIMENT_NAME
+
+    mlflow_experiment_name = MLFLOW_EXPERIMENT_NAME
+    mlflow_uri = MLFLOW_URI
+
     logger.info(f"Start learning {dimensionally_alg_type} with hyperparams: {dim_arg_hyperparams}")
 
     mlflow.set_tracking_uri(mlflow_uri)
     mlflow.set_experiment(mlflow_experiment_name)
 
-    X, y = load_data_from_s3(bucket_name, processed_prefix, local_data_dir)
+    X_train, X_test, y_train, y_test = load_train_test_from_s3(
+        bucket_name=bucket_name,
+        processed_prefix=processed_prefix,
+        local_data_dir=local_data_dir,
+    )
 
-    validate_loaded_arrays(X, y)
+    validate_loaded_arrays(X_train, y_train)
 
     with mlflow.start_run(run_name=f"{dimensionally_alg_type}"):
+
         if dimensionally_alg_type == "pca":
             n_components = dim_arg_hyperparams["pca_components"]
-
-            max_components = min(X.shape[1], X.shape[0])
-            if n_components > max_components:
-                logger.warning(
-                    f"pca_components={n_components} больше максимально возможного {max_components}. Уменьшено до {max_components}")
-                n_components = max_components
-
-            mlflow.log_param("pca_components", n_components)
+            max_components = min(X_train.shape[1], X_train.shape[0])
+            n_components = min(n_components, max_components)
 
             model = PCA(n_components=n_components)
-            X_new = model.fit_transform(X)
 
-            explained_variance = sum(model.explained_variance_ratio_)
-            mlflow.log_metric("explained_variance_ratio", explained_variance)
+            X_train_new = model.fit_transform(X_train)
+            X_test_new = model.transform(X_test)
 
-        elif dimensionally_alg_type == "tsne":
-            logger.info("Обучение t-SNE")
-            max_samples = 10_000
-            if X.shape[0] > max_samples:
-                # слишком большой объем данных, t-SNE применять может быть нецелесообразно
-                logger.warning(f"t-SNE с {X.shape[0]} сэмплами может быть медленным. Рекомендуется ≤ {max_samples}")
-
-            try:
-                model = TSNE(**dim_arg_hyperparams)
-                X_new = model.fit_transform(X)
-                logger.info(f"t-SNE выполнен: X_new.shape={X_new.shape}")
-            except Exception as e:
-                logger.error(f"Ошибка обучения t-SNE: {e}")
-                raise RuntimeError(f"Ошибка обучения t-SNE: {e}") from e
-
+            mlflow.log_metric(
+                "explained_variance_ratio",
+                float(sum(model.explained_variance_ratio_)),
+            )
 
         elif dimensionally_alg_type == "umap":
-            logger.info("Обучение umap")
+            model = UMAP(**dim_arg_hyperparams)
 
-            try:
-                model = UMAP(**dim_arg_hyperparams)
-                X_new = model.fit_transform(X)
-            except Exception as e:
-                logger.error(f"Ошибка обучения UMAP: {e}")
-                raise RuntimeError(f"Ошибка обучения UMAP: {e}") from e
+            X_train_new = model.fit_transform(X_train)
+            X_test_new = model.transform(X_test)
+
 
         elif dimensionally_alg_type == "TDA":  # реализовать!
             mlflow.log_param("TDA", "TDA")
@@ -268,18 +212,26 @@ def _train_dim_model(
                 except Exception as e:
                     logger.warning(f"Не удалось залогировать параметр {key}: {e}")
 
-        output_filename = f"X_{dimensionally_alg_type}_transformed.npy"
-        np.save(output_filename, X_new)
-
         # Загружаем файл в S3
         s3 = S3Hook(aws_conn_id="s3")
-        s3.load_file(
-            filename=output_filename,
-            key=f"{processed_prefix}/transformed/{output_filename}",
-            bucket_name=bucket_name,
-            replace=True,
-        )
 
-        print(f"Файл {output_filename} успешно загружен в S3.")
+        outputs = {
+            f"X_{dimensionally_alg_type}_train.npy": X_train_new,
+            f"X_{dimensionally_alg_type}_test.npy": X_test_new,
+        }
 
-        os.remove(output_filename)
+        for name, array in outputs.items():
+            if array is None:
+                continue
+
+            local_file = Path(name)
+            np.save(local_file, array)
+
+            s3.load_file(
+                filename=str(local_file),
+                key=f"{processed_prefix}/transformed/{name}",
+                bucket_name=bucket_name,
+                replace=True,
+            )
+
+            local_file.unlink()
