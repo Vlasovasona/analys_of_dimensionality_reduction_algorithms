@@ -1,9 +1,5 @@
-from scripts.TDA.create_persistence_diagram_functions import create_persistence_diagram, delete_noise_from_diag
-from scripts.TDA.vectorize_diagram_functions import (features_lifetime, features_mid_lifetime,
-    persistence_to_diagrams, betti_curves_from_persistence, triangle_function, persistence_landscape_1d)
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 import os
-import io
 import pickle
 import numpy as np
 
@@ -42,7 +38,7 @@ def _compute_persistence_diagrams() -> None:
         tmp_path = s3.download_file(
             key=key,
             bucket_name=BUCKET_NAME,
-            local_path=TMP_DIR,  # ← ТОЛЬКО ДИРЕКТОРИЯ
+            local_path=TMP_DIR,
         )
 
         os.replace(tmp_path, final_path)
@@ -70,10 +66,66 @@ def _compute_persistence_diagrams() -> None:
         os.remove(pd_path)
 
 
+
 def _vectorize_persistence_diagrams():
     """
     Векторизация диаграмм персистентвности для каждого канала
     Объединение трех каналов в один
     Загрузка в S3 в формате .npy
     """
-    pass
+    from scripts.TDA.vectorize_diagram_functions import vectorize_diagram, persistence_to_diagrams
+
+    s3 = S3Hook(aws_conn_id="s3")
+    os.makedirs(TMP_DIR, exist_ok=True)
+
+    # Префикс на S3, где лежат батчи PD
+    pd_prefix = os.path.join(PROCESSED_PREFIX, "TDA_PD")
+    keys = sorted(
+        k for k in s3.list_keys(BUCKET_NAME, prefix=pd_prefix)
+        if k.endswith(".pkl")
+    )
+
+    if not keys:
+        raise Exception(f"Нет диаграмм в бакете {pd_prefix}")
+
+    for key in keys:
+        filename = os.path.basename(key)
+        local_pd_path = os.path.join(TMP_DIR, filename)
+
+        # Скачиваем батч PD
+        tmp_path = s3.download_file(
+            key=key,
+            bucket_name=BUCKET_NAME,
+            local_path=TMP_DIR,  # только директория
+        )
+        os.replace(tmp_path, local_pd_path)
+
+        # Загружаем диаграммы
+        with open(local_pd_path, "rb") as f:
+            batch_pd_dicts = pickle.load(f)  # каждый элемент = {"gray":..., "sobel":..., "gaussian":...}
+
+        batch_vectors = []
+        for pd_dict in batch_pd_dicts:
+            vecs_per_image = []
+            for channel in ["gray", "sobel", "gaussian"]:
+                channel_vec = vectorize_diagram(pd_dict[channel])
+                vecs_per_image.append(channel_vec)
+            batch_vectors.append(np.concatenate(vecs_per_image))
+
+        X_vector = np.array(batch_vectors, dtype=np.float32)
+
+        vec_filename = filename.replace("PD_", "VEC_").replace(".pkl", ".npy")
+        local_vec_path = os.path.join(TMP_DIR, vec_filename)
+        np.save(local_vec_path, X_vector)
+
+        s3.load_file(
+            filename=local_vec_path,
+            key=f"{PROCESSED_PREFIX}TDA_vectorized/{vec_filename}",
+            bucket_name=BUCKET_NAME,
+            replace=True
+        )
+
+        # Чистим tmp
+        os.remove(local_pd_path)
+        os.remove(local_vec_path)
+
