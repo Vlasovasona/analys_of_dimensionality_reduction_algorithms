@@ -11,3 +11,4 @@ umap-learn==0.5.3
 pytest==7.4.3
 pytest-cov==4.1.0
 python-dotenv==1.0.0
+gudhi==3.11.0
