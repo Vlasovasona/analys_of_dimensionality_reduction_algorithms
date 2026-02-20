@@ -3,6 +3,8 @@ import shutil
 import numpy as np
 import io
 import json
+from typing import List
+from numpy import ndarray
 import kagglehub
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 
@@ -10,7 +12,7 @@ BUCKET_NAME = "mri-dataset"
 DATA_DIR = "/opt/airflow/data/raw/mri_images"
 IMG_SIZE = 64
 RAW_PREFIX = "mri/raw/"
-PROCESSED_PREFIX = "mri/processed/"
+PROCESSED_PREFIX = "mri/processed"
 BATCH_SIZE = 128
 TMP_DIR = "/tmp/mri_batches"
 
@@ -42,8 +44,8 @@ def _upload_images_to_s3() -> None:
             s3.load_file(filename=local_path, key=s3_key, bucket_name=BUCKET_NAME, replace=True)
 
 
-def _save_batch(X: list[np.array],
-                y: list[int],
+def _save_batch(X,
+                y,
                 batch_id: int,
                 s3: S3Hook) -> None:
     """
@@ -79,8 +81,8 @@ def _save_batch(X: list[np.array],
     os.remove(y_path)
 
 
-def _save_batch_tda(X: list[np.ndarray],
-                    y: list[int],
+def _save_batch_tda(X,
+                    y,
                     batch_id: int,
                     s3: S3Hook) -> None:
     """
