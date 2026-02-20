@@ -67,12 +67,13 @@ def _compute_persistence_diagrams() -> None:
 
 
 
-def _vectorize_persistence_diagrams():
+def _vectorize_persistence_diagrams(test_size: float):
     """
     Векторизация диаграмм персистентвности для каждого канала
     Объединение трех каналов в один
     Загрузка в S3 в формате .npy
     """
+    from sklearn.model_selection import train_test_split
     from scripts.TDA.vectorize_diagram_functions import vectorize_diagram, persistence_to_diagrams
 
     s3 = S3Hook(aws_conn_id="s3")
@@ -88,6 +89,8 @@ def _vectorize_persistence_diagrams():
     if not keys:
         raise Exception(f"Нет диаграмм в бакете {pd_prefix}")
 
+    all_vectors = []
+
     for key in keys:
         filename = os.path.basename(key)
         local_pd_path = os.path.join(TMP_DIR, filename)
@@ -96,7 +99,7 @@ def _vectorize_persistence_diagrams():
         tmp_path = s3.download_file(
             key=key,
             bucket_name=BUCKET_NAME,
-            local_path=TMP_DIR,  # только директория
+            local_path=TMP_DIR,
         )
         os.replace(tmp_path, local_pd_path)
 
@@ -104,28 +107,43 @@ def _vectorize_persistence_diagrams():
         with open(local_pd_path, "rb") as f:
             batch_pd_dicts = pickle.load(f)  # каждый элемент = {"gray":..., "sobel":..., "gaussian":...}
 
-        batch_vectors = []
         for pd_dict in batch_pd_dicts:
             vecs_per_image = []
             for channel in ["gray", "sobel", "gaussian"]:
                 channel_vec = vectorize_diagram(pd_dict[channel])
                 vecs_per_image.append(channel_vec)
-            batch_vectors.append(np.concatenate(vecs_per_image))
+            all_vectors.append(np.concatenate(vecs_per_image))
 
-        X_vector = np.array(batch_vectors, dtype=np.float32)
-
-        vec_filename = filename.replace("PD_", "VEC_").replace(".pkl", ".npy")
-        local_vec_path = os.path.join(TMP_DIR, vec_filename)
-        np.save(local_vec_path, X_vector)
-
-        s3.load_file(
-            filename=local_vec_path,
-            key=f"{PROCESSED_PREFIX}TDA_vectorized/{vec_filename}",
-            bucket_name=BUCKET_NAME,
-            replace=True
-        )
-
-        # Чистим tmp
         os.remove(local_pd_path)
-        os.remove(local_vec_path)
+
+    X = np.array(all_vectors, dtype=np.float32)
+
+    X_train, X_test = train_test_split(
+        X, test_size=test_size, random_state=42, shuffle=True
+    )
+
+    # Сохраняем локально
+    train_path = os.path.join(TMP_DIR, "X_train.npy")
+    test_path = os.path.join(TMP_DIR, "X_test.npy")
+    np.save(train_path, X_train)
+    np.save(test_path, X_test)
+
+    # Загружаем на S3
+    s3.load_file(
+        filename=train_path,
+        key=os.path.join(PROCESSED_PREFIX, "TDA_vectorized/X_train.npy"),
+        bucket_name=BUCKET_NAME,
+        replace=True
+    )
+    s3.load_file(
+        filename=test_path,
+        key=os.path.join(PROCESSED_PREFIX, "TDA_vectorized/X_test.npy"),
+        bucket_name=BUCKET_NAME,
+        replace=True
+    )
+
+    os.remove(train_path)
+    os.remove(test_path)
+
+    print(f"Готово! Train shape: {X_train.shape}, Test shape: {X_test.shape}")
 

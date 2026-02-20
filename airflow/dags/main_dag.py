@@ -52,7 +52,9 @@ def compute_persistence_diagrams_callable(**context):
 
 def vectorize_persistence_diagrams_callable(**context):
     from scripts.TDA.tda_dag_functions import _vectorize_persistence_diagrams
-    return _vectorize_persistence_diagrams()
+    return _vectorize_persistence_diagrams(op_kwargs={
+            "test_size": 0.2,
+        })
 
 # Закончен блок wrapper-функций
 
