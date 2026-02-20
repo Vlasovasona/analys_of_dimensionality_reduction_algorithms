@@ -15,7 +15,7 @@ BATCH_SIZE = 128
 TMP_DIR = "/tmp/mri_batches"
 
 
-def _download_mri_dataset():
+def _download_mri_dataset() -> None:
     """Скачивание датасета из Kaggle в локальное хранилище"""
     try:
         path = kagglehub.dataset_download("fernando2rad/brain-tumor-mri-images-44c")
@@ -32,7 +32,7 @@ def _download_mri_dataset():
             shutil.copy2(src, dst)  # копирует один файл
 
 
-def _upload_images_to_s3():
+def _upload_images_to_s3() -> None:
     """Загрузка сырых изображений в S3"""
     s3 = S3Hook(aws_conn_id="s3")  # хук получает данные подключения "s3"
     for root, _, files in os.walk(DATA_DIR):  # кортеж (папка, список подпапок, список файлов)
@@ -42,8 +42,27 @@ def _upload_images_to_s3():
             s3.load_file(filename=local_path, key=s3_key, bucket_name=BUCKET_NAME, replace=True)
 
 
-def _save_batch(X, y, batch_id, s3):
-    """Сохраняет батч изображений и меток в S3"""
+def _save_batch(X: list[np.array],
+                y: list[int],
+                batch_id: int,
+                s3: S3Hook) -> None:
+    """
+    Сохраняет батч изображений и меток в S3
+    Формат данных:
+    - X: RGB изображения
+    - y: числовые метки классов
+
+    Параметры
+    ----------
+    X : list[np.ndarray]
+        Список изображений размера.
+    y : list[int]
+        Список целевых меток.
+    batch_id : int
+        Идентификатор батча (используется в имени файла).
+    s3 : S3Hook
+        Хук для загрузки файлов в S3.
+    """
     X = np.asarray(X, dtype=np.float32)
     y = np.asarray(y, dtype=np.int64)
 
@@ -60,8 +79,33 @@ def _save_batch(X, y, batch_id, s3):
     os.remove(y_path)
 
 
-def _save_batch_tda(X, y, batch_id, s3):
-    X = np.asarray(X, dtype=np.float32)  # (B, H, W, 3)
+def _save_batch_tda(X: list[np.ndarray],
+                    y: list[int],
+                    batch_id: int,
+                    s3: S3Hook) -> None:
+    """
+    Сохраняет батч данных для TDA-пайплайна в S3.
+
+    Формат данных:
+    - X: (B, H, W, 3), где каналы:
+        [grayscale, sobel, gaussian]
+    - y: (B,), числовые метки классов
+
+    Данные сохраняются в подкаталог PROCESSED_PREFIX/TDA/.
+
+    Параметры
+    ----------
+    X : list[np.ndarray]
+        Список TDA-представлений изображений.
+    y : list[int]
+        Список целевых меток.
+    batch_id : int
+        Идентификатор батча.
+    s3 : S3Hook
+        Хук для загрузки файлов в S3.
+
+    """
+    X = np.asarray(X, dtype=np.float32)
     y = np.asarray(y, dtype=np.int64)
 
     X_path = f"{TMP_DIR}/X_{batch_id:04d}.npy"
@@ -87,8 +131,8 @@ def _save_batch_tda(X, y, batch_id, s3):
     os.remove(y_path)
 
 
-def _preprocess_mri_images():
-    """Нормализация, resize картинок, формирование батчей, загрузка обработанных данных в S3"""
+def _preprocess_mri_images() -> None:
+    """Нормализация, resize картинок, формирование батчей, загрузка обработанных данных в S3 для классического ML/CNN"""
     import cv2
 
     os.makedirs(TMP_DIR, exist_ok=True)
@@ -135,7 +179,28 @@ def _preprocess_mri_images():
         replace=True,
     )
 
-def preprocess_image(img, img_size):
+def preprocess_image(img: np.ndarray,
+                    img_size: int) -> np.ndarray:
+    """
+    Преобразует изображение в трёхканальное представление для TDA.
+
+    Каналы:
+    1. Grayscale изображение
+    2. Градиент Собеля
+    3. Гауссово сглаживание
+
+    Параметры
+    ----------
+    img : np.ndarray
+        Входное изображение в формате BGR.
+    img_size : int
+        Размер выходного изображения (H = W = img_size).
+
+    Returns
+    -------
+    np.ndarray
+        Массив формы (img_size, img_size, 3), dtype=float32.
+    """
     import cv2
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -153,7 +218,8 @@ def preprocess_image(img, img_size):
     # объединяем в три канала
     return np.stack([gray, sobel, gaussian], axis=-1)
 
-def _preprocess_mri_images_to_tda():
+def _preprocess_mri_images_to_tda() -> None:
+    """Выполняет предобработку изображений для TDA-пайплайна."""
     import cv2
 
     os.makedirs(TMP_DIR, exist_ok=True)
