@@ -136,8 +136,8 @@ def _save_batch_tda(X,
 def _preprocess_mri_images() -> None:
     """Нормализация, resize картинок, формирование батчей, загрузка обработанных данных в S3 для классического ML/CNN"""
     import cv2
-
     os.makedirs(TMP_DIR, exist_ok=True)
+
     s3 = S3Hook(aws_conn_id="s3")
 
     keys = [k for k in s3.list_keys(BUCKET_NAME, RAW_PREFIX) if k.lower().endswith((".jpg", ".png", ".jpeg"))]
@@ -223,12 +223,13 @@ def preprocess_image(img: np.ndarray,
 def _preprocess_mri_images_to_tda() -> None:
     """Выполняет предобработку изображений для TDA-пайплайна."""
     import cv2
-
     os.makedirs(TMP_DIR, exist_ok=True)
     s3 = S3Hook(aws_conn_id="s3")
 
     keys = [k for k in s3.list_keys(BUCKET_NAME, RAW_PREFIX) if k.lower().endswith((".jpg", ".png", ".jpeg"))]
+    print(len(keys))
     class_names = sorted({k.split("/")[2] for k in keys})
+    print(len(class_names))
     class_to_idx = {cls: i for i, cls in enumerate(class_names)}
 
     batch_X, batch_y = [], []
@@ -255,6 +256,7 @@ def _preprocess_mri_images_to_tda() -> None:
                 _save_batch_tda(batch_X, batch_y, batch_id, s3)
                 batch_X, batch_y = [], []
                 batch_id += 1
+                print(batch_id)
 
         except Exception as e:
             print(f"Ошибка обработки {key}: {e}")

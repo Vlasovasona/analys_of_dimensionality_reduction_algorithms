@@ -3,6 +3,10 @@ from airflow.operators.python import PythonOperator
 
 # from airflow.utils.dates import days_ago
 import pendulum
+from scripts.TDA.tda_dag_functions import _train_TDA_models
+from scripts.TDA.tda_dag_functions import _vectorize_persistence_diagrams, _prepare_train_test_datasets_tda
+from scripts.classic_dim_algs import _train_dim_model
+from scripts.train_models import _train_model
 from scripts.parameters_validation.validate_classic_dim_algs import validate_dimensionality_config
 from scripts.parameters_validation.dag_config_validation import validate_storage_config
 from scripts.dag_config import BUCKET_NAME, PROCESSED_PREFIX, LOCAL_DATA_DIR
@@ -30,31 +34,14 @@ def preprocess_mri_images_tda_callable(**context):
     return _preprocess_mri_images_to_tda()
 
 
-def train_dim_model_callable(**context):
-    from scripts.classic_dim_algs import _train_dim_model
-    return _train_dim_model()
-
-
 def prepare_train_test_datasets_callable(**context):
     from scripts.classic_dim_algs import _prepare_train_test_datasets
     return _prepare_train_test_datasets()
 
 
-def train_models_callable(**context):
-    from scripts.train_models import _train_model
-    return _train_model()
-
-
 def compute_persistence_diagrams_callable(**context):
     from scripts.TDA.tda_dag_functions import _compute_persistence_diagrams
     return _compute_persistence_diagrams()
-
-
-def vectorize_persistence_diagrams_callable(**context):
-    from scripts.TDA.tda_dag_functions import _vectorize_persistence_diagrams
-    return _vectorize_persistence_diagrams(op_kwargs={
-            "test_size": 0.2,
-        })
 
 # Закончен блок wrapper-функций
 
@@ -80,7 +67,7 @@ def build_dim_tasks(
 
     train_task = PythonOperator(
         task_id=f"create_{alg_name}",
-        python_callable=train_dim_model_callable,
+        python_callable=_train_dim_model,
         op_kwargs={
             "dimensionally_alg_type": alg_name,
             "dim_arg_hyperparams": hyperparams,
@@ -107,6 +94,11 @@ with dag:
     validate_dag_config = PythonOperator(
         task_id="validate_dag_config",
         python_callable=validate_storage_config,
+        op_kwargs={
+            "bucket_name": BUCKET_NAME,
+            "processed_prefix": PROCESSED_PREFIX,
+            "local_data_dir": LOCAL_DATA_DIR,
+        },
     )
 
     download_mri_dataset = PythonOperator(
@@ -152,7 +144,7 @@ with dag:
 
     train_logreg_pca = PythonOperator(
         task_id="train_logreg_pca",
-        python_callable=train_models_callable,
+        python_callable=_train_model,
         op_kwargs={
             "dimensionally_alg_type": "pca",
             "model_type": "logreg",
@@ -166,7 +158,7 @@ with dag:
 
     train_svm_pca = PythonOperator(
         task_id="train_svm_pca",
-        python_callable=train_models_callable,
+        python_callable=_train_model,
         op_kwargs={
             "dimensionally_alg_type": "pca",
             "model_type": "svm",
@@ -180,7 +172,7 @@ with dag:
 
     train_logreg_umap = PythonOperator(
         task_id="train_logreg_umap",
-        python_callable=train_models_callable,
+        python_callable=_train_model,
         op_kwargs={
             "dimensionally_alg_type": "umap",
             "model_type": "logreg",
@@ -194,7 +186,7 @@ with dag:
 
     train_svm_umap = PythonOperator(
         task_id="train_svm_umap",
-        python_callable=train_models_callable,
+        python_callable=_train_model,
         op_kwargs={
             "dimensionally_alg_type": "umap",
             "model_type": "svm",
@@ -211,9 +203,51 @@ with dag:
         python_callable=compute_persistence_diagrams_callable,
     )
 
+
     vectorize_persistence_diagrams = PythonOperator(
         task_id="vectorize_persistence_diagrams",
-        python_callable=vectorize_persistence_diagrams_callable,
+        python_callable=_vectorize_persistence_diagrams,
+        op_kwargs={
+            "test_size": 0.2,
+        },
+    )
+
+    prepare_train_test_datasets_tda = PythonOperator(
+        task_id="prepare_train_test_datasets_tda",
+        python_callable=_prepare_train_test_datasets_tda,
+        op_kwargs={
+            "bucket_name": BUCKET_NAME,
+            "processed_prefix": PROCESSED_PREFIX,
+            "local_data_dir": LOCAL_DATA_DIR,
+            "test_size": 0.2,
+            "random_state": 42,
+        },
+    )
+
+    train_logreg_tda = PythonOperator(
+        task_id="train_logreg_tda",
+        python_callable=_train_TDA_models,
+        op_kwargs={
+            "model_type": "logreg",
+            "bucket_name": BUCKET_NAME,
+            "processed_prefix": PROCESSED_PREFIX,
+            "local_data_dir": LOCAL_DATA_DIR,
+            "mlflow_experiment_name": "mri-brain-tumor",
+            "mlflow_uri": "http://mlflow:5000",
+        },
+    )
+
+    train_svm_tda = PythonOperator(
+        task_id="train_svm_tda",
+        python_callable=_train_TDA_models,
+        op_kwargs={
+            "model_type": "svm",
+            "bucket_name": BUCKET_NAME,
+            "processed_prefix": PROCESSED_PREFIX,
+            "local_data_dir": LOCAL_DATA_DIR,
+            "mlflow_experiment_name": "mri-brain-tumor",
+            "mlflow_uri": "http://mlflow:5000",
+        },
     )
 
     validate_dag_config >> download_mri_dataset >> upload_images_to_s3
@@ -221,7 +255,9 @@ with dag:
     upload_images_to_s3 >> preprocess_mri_images
     upload_images_to_s3 >> preprocess_mri_images_tda
 
-    preprocess_mri_images_tda >> compute_persistence_diagrams >> vectorize_persistence_diagrams
+    preprocess_mri_images_tda >> compute_persistence_diagrams >> vectorize_persistence_diagrams >> prepare_train_test_datasets_tda
+
+    prepare_train_test_datasets_tda >> [train_logreg_tda, train_svm_tda]
 
     preprocess_mri_images >> prepare_train_test
 
