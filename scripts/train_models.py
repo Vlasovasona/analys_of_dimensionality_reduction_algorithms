@@ -2,13 +2,12 @@ import os
 import numpy as np
 import mlflow
 import mlflow.sklearn
-from pathlib import Path
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 from typing import Tuple
 from numpy import ndarray
-from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 
 
