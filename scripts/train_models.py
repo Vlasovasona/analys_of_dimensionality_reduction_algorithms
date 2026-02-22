@@ -73,6 +73,10 @@ def _train_model(
     """
     Универсальная функция обучения модели classic ML
     """
+    from sklearn.pipeline import Pipeline
+    from sklearn.model_selection import GridSearchCV
+    from sklearn.preprocessing import StandardScaler
+
     mlflow.set_tracking_uri(mlflow_uri)  # куда отправлять логи
     mlflow.set_experiment(mlflow_experiment_name)
 
@@ -84,14 +88,49 @@ def _train_model(
 
         # создаем модели в зависимости от значения аргумента model_type
         if model_type == "logreg":
-            model = LogisticRegression(max_iter=1000)
+            pipeline = Pipeline(steps=[
+                ("scaler", StandardScaler()),
+                ("clf", LogisticRegression(
+                    max_iter=2000,
+                    class_weight="balanced",
+                    solver="liblinear"
+                ))
+            ])
+
+            param_grid = {
+                "clf__C": [0.01, 0.1, 1.0, 10.0],
+                "clf__penalty": ["l1", "l2"],
+            }
+
         elif model_type == "svm":
-            model = SVC(kernel="rbf")
+            pipeline = Pipeline(steps=[
+                ("scaler", StandardScaler()),
+                ("clf", SVC(
+                    kernel="rbf",
+                    class_weight="balanced"
+                ))
+            ])
+
+            param_grid = {
+                "clf__C": [0.1, 1, 10, 100],
+                "clf__gamma": ["scale", 0.1, 0.01, 0.001],
+            }
+
         else:
             raise ValueError(f"Unknown model type: {model_type}")
 
-        model.fit(X_train, y_train)
-        preds = model.predict(X_test)
+        grid = GridSearchCV(
+            estimator=pipeline,
+            param_grid=param_grid,
+            scoring="f1_macro",
+            cv=5,
+            n_jobs=-1,
+            verbose=1,
+        )
+
+        grid.fit(X_train, y_train)
+        best_model = grid.best_estimator_
+        preds = best_model.predict(X_test)
 
         acc = accuracy_score(y_test, preds)  # логируем метрики качества классификации
         precision = precision_score(y_true=y_test, y_pred=preds, average="macro")
@@ -103,4 +142,4 @@ def _train_model(
         mlflow.log_metric("recall", recall)
         mlflow.log_metric("f1", f1)
 
-        mlflow.sklearn.log_model(model, "model")
+        mlflow.sklearn.log_model(best_model, "model")

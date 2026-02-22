@@ -12,7 +12,7 @@ BUCKET_NAME = "mri-dataset"
 DATA_DIR = "/opt/airflow/data/raw/mri_images"
 IMG_SIZE = 64
 RAW_PREFIX = "mri/raw/"
-PROCESSED_PREFIX = "mri/processed"
+PROCESSED_PREFIX = "mri/processed/"
 BATCH_SIZE = 128
 TMP_DIR = "/tmp/mri_batches"
 
