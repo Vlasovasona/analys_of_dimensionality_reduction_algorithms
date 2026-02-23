@@ -12,7 +12,7 @@ BUCKET_NAME = "mri-dataset"
 DATA_DIR = "/opt/airflow/data/raw/mri_images"
 IMG_SIZE = 64
 RAW_PREFIX = "mri/raw/"
-PROCESSED_PREFIX = "mri/processed/"
+PROCESSED_PREFIX = "mri/processed"
 BATCH_SIZE = 128
 TMP_DIR = "/tmp/mri_batches"
 
@@ -74,8 +74,8 @@ def _save_batch(X,
     np.save(X_path, X)
     np.save(y_path, y)
 
-    s3.load_file(filename=X_path, key=f"{PROCESSED_PREFIX}X_{batch_id:04d}.npy", bucket_name=BUCKET_NAME, replace=True)
-    s3.load_file(filename=y_path, key=f"{PROCESSED_PREFIX}y_{batch_id:04d}.npy", bucket_name=BUCKET_NAME, replace=True)
+    s3.load_file(filename=X_path, key=f"{PROCESSED_PREFIX}/X_{batch_id:04d}.npy", bucket_name=BUCKET_NAME, replace=True)
+    s3.load_file(filename=y_path, key=f"{PROCESSED_PREFIX}/y_{batch_id:04d}.npy", bucket_name=BUCKET_NAME, replace=True)
 
     os.remove(X_path)
     os.remove(y_path)

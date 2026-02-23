@@ -143,3 +143,14 @@ def _train_model(
         mlflow.log_metric("f1", f1)
 
         mlflow.sklearn.log_model(best_model, "model")
+
+        metrics = {
+            "alg_name": f"{dimensionally_alg_type}/{model_type}",
+            "accuracy": acc,
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+            "best_params": grid.best_params_,
+        }
+
+        return metrics
