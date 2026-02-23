@@ -235,7 +235,7 @@ def _train_TDA_models(
             ])
 
             param_grid = {
-                "clf__C": [1.0, 10.0],
+                "clf__C": [10.0],
                 "clf__penalty": ["l1"],
             }
 
@@ -282,6 +282,17 @@ def _train_TDA_models(
         mlflow.log_metric("f1", f1)
 
         mlflow.sklearn.log_model(best_model, "model")
+
+        metrics = {
+            "alg_name": f"TDA/{model_type}",
+            "accuracy": acc,
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+            "best_params": grid.best_params_,
+        }
+
+        return metrics
 
 def _prepare_train_test_datasets_tda(
     bucket_name: str,

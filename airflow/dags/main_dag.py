@@ -34,6 +34,11 @@ def preprocess_mri_images_tda_callable(**_):
     from scripts.data_extraction.mri import _preprocess_mri_images_to_tda
     return _preprocess_mri_images_to_tda()
 
+def final_check_callable(**context):
+    from scripts.final_check import _final_check
+    ti = context["ti"]
+    return _final_check(ti)
+
 
 def prepare_train_test_datasets_callable(**_):
     from scripts.classic_dim_algs import _prepare_train_test_datasets
@@ -184,6 +189,11 @@ with dag:
         prepare_train_test >> validate_task >> train_task
         train_dim_tasks[alg_name] = train_task
 
+    final_check = PythonOperator(
+        task_id="final_check",
+        python_callable=final_check_callable,
+    )
+
     # ML models
     train_dim_tasks["pca"] >> [
         PythonOperator(
@@ -196,7 +206,7 @@ with dag:
             python_callable=train_model_callable,
             op_kwargs={"dim_alg": "pca", "model_type": "svm"},
         ),
-    ]
+    ] >> final_check
 
     train_dim_tasks["umap"] >> [
         PythonOperator(
@@ -209,7 +219,7 @@ with dag:
             python_callable=train_model_callable,
             op_kwargs={"dim_alg": "umap", "model_type": "svm"},
         ),
-    ]
+    ] >> final_check
 
     compute_pd = PythonOperator(
         task_id="compute_persistence_diagrams",
@@ -242,3 +252,4 @@ with dag:
     validate_dag_config >> download_mri_dataset >> upload_images_to_s3
     upload_images_to_s3 >> preprocess_mri_images >> prepare_train_test
     upload_images_to_s3 >> preprocess_mri_images_tda >> compute_pd >> vectorize_pd >> prepare_tda >> train_tda
+    train_tda >> final_check
