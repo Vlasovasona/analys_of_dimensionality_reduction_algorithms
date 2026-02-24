@@ -1,11 +1,11 @@
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 import os
 import datetime
+import pandas as pd
 
 TMP_DIR = "/tmp/mri_batches"
 
 def _final_check(ti):
-    import pandas as pd
     from scripts.dag_config import BUCKET_NAME
 
     train_tasks = [
@@ -40,9 +40,13 @@ def _final_check(ti):
 
     # загружаем в S3
     s3 = S3Hook(aws_conn_id="s3")
+    execution_ts = ti.execution_date.strftime("%H-%M-%S")
+
+    s3_key = f"reports/{run_date}/{execution_ts}.csv"
+
     s3.load_file(
         filename=final_path,
-        key=f"reports/{run_date}/final_report.csv",
+        key=s3_key,
         bucket_name=BUCKET_NAME,
         replace=True,
     )

@@ -256,7 +256,6 @@ def _train_TDA_models(
         else:
             raise ValueError(f"Unknown model type: {model_type}")
 
-
         grid = GridSearchCV(
             estimator=pipeline,
             param_grid=param_grid,
