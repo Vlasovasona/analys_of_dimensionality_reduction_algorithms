@@ -9,6 +9,9 @@ from typing import Tuple
 from numpy import ndarray
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import GridSearchCV
+from sklearn.preprocessing import StandardScaler
 
 
 def load_dim_data_from_s3(
@@ -73,9 +76,6 @@ def _train_model(
     """
     Универсальная функция обучения модели classic ML
     """
-    from sklearn.pipeline import Pipeline
-    from sklearn.model_selection import GridSearchCV
-    from sklearn.preprocessing import StandardScaler
 
     mlflow.set_tracking_uri(mlflow_uri)  # куда отправлять логи
     mlflow.set_experiment(mlflow_experiment_name)
