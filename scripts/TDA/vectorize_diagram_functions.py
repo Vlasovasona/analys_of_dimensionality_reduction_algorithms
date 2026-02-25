@@ -3,14 +3,36 @@ from collections import defaultdict
 from scipy.stats import skew, kurtosis
 
 
-def vectorize_diagram(diagram, n_bins=200, n_layers=3):
+def vectorize_diagram(
+    diagram,
+    n_bins: int = 200,
+    n_layers: int = 3,
+):
+    """
+    Преобразует persistence diagram в фиксированный вектор признаков
+    """
+
+    # Пустая диаграмма
     if len(diagram) == 0:
-        return np.zeros(12 + 5 + n_bins + n_bins*n_layers, dtype=np.float32)
+        n_stats = 12
+        n_mid = 5
+        n_betti = n_bins
+        n_landscape = n_layers * n_bins
 
-    lifetimes = [death-birth for dim, (birth, death) in diagram]
+        return np.zeros(
+            n_stats + n_mid + n_betti + n_landscape,
+            dtype=np.float32,
+        )
 
-    features = [
-        len(diagram),
+    # Lifetimes
+    lifetimes = np.array(
+        [death - birth for _, (birth, death) in diagram],
+        dtype=np.float32,
+    )
+
+    # Статистические признаки (12)
+    stats = np.array([
+        len(lifetimes),
         np.max(lifetimes),
         np.sum(lifetimes),
         np.mean(lifetimes),
@@ -21,45 +43,43 @@ def vectorize_diagram(diagram, n_bins=200, n_layers=3):
         np.quantile(lifetimes, 0.5),
         np.quantile(lifetimes, 0.75),
         kurtosis(lifetimes, fisher=True, bias=False),
-        skew(lifetimes, bias=False)
-    ]
+        skew(lifetimes, bias=False),
+    ], dtype=np.float32)
 
-    # mid_life → 5 квантилей
-    mid = np.quantile(np.array(lifetimes)/2, [0,0.25,0.5,0.75,1])
+    # Mid-life (5 квантилей)
+    mid_life = np.quantile(lifetimes / 2, [0, 0.25, 0.5, 0.75, 1]).astype(np.float32)
 
-    # betti_curve → фиксированная длина n_bins
+    # Betti
     diagrams = persistence_to_diagrams(diagram)
-    t, betti_curves = betti_curves_from_persistence(diagrams, n_bins=n_bins) # length = bins
-    flattened = []
+    _, betti_curves = betti_curves_from_persistence(diagrams, n_bins=n_bins)
 
-    for dim in betti_curves:
-        # проверяем длину, если меньше n_bins, дополняем нулями
-        if len(dim) < n_bins:
-            dim = np.pad(dim, (0, n_bins - len(dim)), mode='constant')
-        elif len(dim) > n_bins:
-            dim = dim[:n_bins]  # усекаем лишнее
+    betti_vector = []
+    for curve in betti_curves:
+        if len(curve) < n_bins:
+            curve = np.pad(curve, (0, n_bins - len(curve)))
+        betti_vector.append(curve)
 
-        flattened.append(dim)
+    betti_vector = np.concatenate(betti_vector).astype(np.float32)
 
-    # объединяем все кривые в один вектор
-    if flattened:
-        return np.concatenate(flattened)
-    else:
-        # если нет кривых, возвращаем нулевой вектор
-        return np.zeros(0, dtype=np.float32)
+    # Persistence landscapes
+    landscape_vectors = []
 
-    landscapes = []
-
-    for dim, diag in enumerate(diagram):
-        eps, landscape = persistence_landscape_1d(
-            diag,
+    for dgm in diagrams:
+        _, landscape = persistence_landscape_1d(
+            dgm,
             n_layers=n_layers,
-            n_bins=n_bins
+            n_bins=n_bins,
         )
-        landscapes.append(landscape.flatten())
-    final_landscape_vector = np.concatenate(landscapes)
+        landscape_vectors.append(landscape.flatten())
 
-    return np.concatenate([features, mid, flattened, final_landscape_vector])
+    landscape_vector = np.concatenate(landscape_vectors).astype(np.float32)
+
+    return np.concatenate([
+        stats,
+        mid_life,
+        betti_vector,
+        landscape_vector,
+    ])
 
 
 def features_mid_lifetime(diagram):
