@@ -57,63 +57,69 @@ def fake_data():
         np.random.randint(0, 2, 5),
     )
 
-# @patch("scripts.train_models.mlflow")
-# @patch("scripts.train_models.load_dim_data_from_s3")
-# @patch("scripts.train_models._train_model.GridSearchCV")
-# def test_train_model_logreg_success(
-#     mock_grid,
-#     mock_load,
-#     mock_mlflow,
-#     fake_data,
-# ):
-#     mock_load.return_value = fake_data
-#
-#     mock_estimator = MagicMock()
-#     mock_estimator.predict.return_value = fake_data[3]
-#
-#     mock_grid.return_value.fit.return_value = None
-#     mock_grid.return_value.best_estimator_ = mock_estimator
-#     mock_grid.return_value.best_params_ = {"clf__C": 1.0}
-#
-#     metrics = _train_model(
-#         dimensionally_alg_type="pca",
-#         model_type="logreg",
-#     )
-#
-#     assert metrics["alg_name"] == "pca/logreg"
-#     assert "accuracy" in metrics
-#     mock_mlflow.log_metric.assert_called()
-#
-#
-# @patch("scripts.train_models.mlflow")
-# @patch("scripts.train_models.load_dim_data_from_s3")
-# @patch("scripts.train_models._train_model.GridSearchCV")
-# def test_train_model_svm_success(
-#     mock_grid,
-#     mock_load,
-#     mock_mlflow,
-#     fake_data,
-# ):
-#     mock_load.return_value = fake_data
-#
-#     mock_estimator = MagicMock()
-#     mock_estimator.predict.return_value = fake_data[3]
-#
-#     mock_grid.return_value.fit.return_value = None
-#     mock_grid.return_value.best_estimator_ = mock_estimator
-#     mock_grid.return_value.best_params_ = {"clf__C": 10}
-#
-#     metrics = _train_model("pca", "svm")
-#
-#     assert metrics["alg_name"] == "pca/svm"
-#
-#
-# def test_train_model_unknown_type():
-#     with pytest.raises(ValueError, match="Unknown model type"):
-#         _train_model(dimensionally_alg_type='pca',
-#                     model_type='knn',
-#                     bucket_name="mri-dataset",
-#                     processed_prefix="mri",
-#                     local_data_dir="mri_train_data",
-#                     mlflow_experiment_name="mri-brain-tumor",
-#                     mlflow_uri="http://mlflow:5000",)
+@patch("scripts.train_models.mlflow")
+@patch("scripts.train_models.load_dim_data_from_s3")
+@patch("scripts.train_models.GridSearchCV")
+def test_train_model_logreg_success(
+    mock_grid,
+    mock_load,
+    mock_mlflow,
+    fake_data,
+):
+    mock_load.return_value = fake_data
+
+    mock_estimator = MagicMock()
+    mock_estimator.predict.return_value = fake_data[3]
+
+    mock_grid.return_value.fit.return_value = None
+    mock_grid.return_value.best_estimator_ = mock_estimator
+    mock_grid.return_value.best_params_ = {"clf__C": 1.0}
+
+    metrics = _train_model(
+        dimensionally_alg_type="pca",
+        model_type="logreg",
+    )
+
+    assert metrics["alg_name"] == "pca/logreg"
+    assert "accuracy" in metrics
+    mock_mlflow.log_metric.assert_called()
+
+
+@patch("scripts.train_models.mlflow")
+@patch("scripts.train_models.load_dim_data_from_s3")
+@patch("scripts.train_models.GridSearchCV")
+def test_train_model_svm_success(
+    mock_grid,
+    mock_load,
+    mock_mlflow,
+    fake_data,
+):
+    mock_load.return_value = fake_data
+
+    mock_estimator = MagicMock()
+    mock_estimator.predict.return_value = fake_data[3]
+
+    mock_grid.return_value.fit.return_value = None
+    mock_grid.return_value.best_estimator_ = mock_estimator
+    mock_grid.return_value.best_params_ = {"clf__C": 10}
+
+    metrics = _train_model("pca", "svm")
+
+    assert metrics["alg_name"] == "pca/svm"
+
+
+@patch("scripts.train_models.load_dim_data_from_s3")
+@patch("scripts.train_models.mlflow")
+def test_train_model_unknown_type(mock_mlflow, mock_load):
+    mock_load.return_value = (
+        np.zeros((1, 2)),  # X_train
+        np.zeros((1, 2)),  # X_test
+        np.zeros(1),       # y_train
+        np.zeros(1),       # y_test
+    )
+
+    with pytest.raises(ValueError, match="Unknown model type"):
+        _train_model(
+            dimensionally_alg_type="pca",
+            model_type="knn",
+        )
