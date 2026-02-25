@@ -48,3 +48,24 @@ def test_final_check_success(mock_makedirs, mock_remove, mock_to_csv, mock_s3hoo
     assert "best_model" in result
     assert result["best_model"]["f1"] == 0.85
     assert "report_s3_key" in result
+
+@pytest.fixture
+def mock_ti_empty_dict():
+    """Мокаем объект TaskInstance с XCom"""
+    ti = MagicMock()
+    ti.xcom_pull.return_value = [
+        None
+    ]
+    ti.execution_date.strftime.return_value = "12-00-00"
+    return ti
+
+@patch("scripts.final_check.S3Hook")
+@patch("scripts.final_check.pd.DataFrame.to_csv")
+@patch("scripts.final_check.os.remove")
+@patch("scripts.final_check.os.makedirs")
+def test_final_check_empty_pull(mock_makedirs, mock_remove, mock_to_csv, mock_s3hook, mock_ti_empty_dict):
+    mock_s3 = mock_s3hook.return_value
+    mock_s3.load_file.return_value = True
+
+    with pytest.raises(ValueError, match="Ни одной метрики не было получено"):
+        _final_check(mock_ti_empty_dict)
