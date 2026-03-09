@@ -58,9 +58,6 @@ def validate_dimensionality_config_callable(alg_name, hyperparams, **_):
     return validate_dimensionality_config(
         dimensionally_alg_type=alg_name,
         dim_arg_hyperparams=hyperparams,
-        bucket_name=BUCKET_NAME,
-        processed_prefix=PROCESSED_PREFIX,
-        local_data_dir=LOCAL_DATA_DIR,
     )
 
 

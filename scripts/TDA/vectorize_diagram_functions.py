@@ -5,24 +5,24 @@ from scipy.stats import skew, kurtosis
 
 def vectorize_diagram(
     diagram,
-    n_bins: int = 200,
-    n_layers: int = 3,
+    n_bins: int = 50,
+    n_layers: int = 2,
 ):
-    """
-    Преобразует persistence diagram в фиксированный вектор признаков
-    """
+    MAX_DIM = 2
+
+    N_STATS = 12
+    N_MID = 5
+    LANDSCAPE_STATS_DIM = 5  # max, mean, std, sum, norm
+
+    VECTOR_SIZE = (
+        N_STATS
+        + N_MID
+        + (MAX_DIM + 1) * LANDSCAPE_STATS_DIM
+    )
 
     # Пустая диаграмма
     if len(diagram) == 0:
-        n_stats = 12
-        n_mid = 5
-        n_betti = n_bins
-        n_landscape = n_layers * n_bins
-
-        return np.zeros(
-            n_stats + n_mid + n_betti + n_landscape,
-            dtype=np.float32,
-        )
+        return np.zeros(VECTOR_SIZE, dtype=np.float32)
 
     # Lifetimes
     lifetimes = np.array(
@@ -30,8 +30,8 @@ def vectorize_diagram(
         dtype=np.float32,
     )
 
-    # Статистические признаки (12)
-    stats = np.array([
+    # Статистика lifetimes
+    lifetime_stats = np.array([
         len(lifetimes),
         np.max(lifetimes),
         np.sum(lifetimes),
@@ -46,38 +46,32 @@ def vectorize_diagram(
         skew(lifetimes, bias=False),
     ], dtype=np.float32)
 
-    # Mid-life (5 квантилей)
-    mid_life = np.quantile(lifetimes / 2, [0, 0.25, 0.5, 0.75, 1]).astype(np.float32)
+    # Mid-life
+    mid_life = np.quantile(
+        lifetimes / 2, [0, 0.25, 0.5, 0.75, 1]
+    ).astype(np.float32)
 
-    # Betti
+    # Persistence landscapes → статистики
     diagrams = persistence_to_diagrams(diagram)
-    _, betti_curves = betti_curves_from_persistence(diagrams, n_bins=n_bins)
+    landscape_features = []
 
-    betti_vector = []
-    for curve in betti_curves:
-        if len(curve) < n_bins:
-            curve = np.pad(curve, (0, n_bins - len(curve)))
-        betti_vector.append(curve)
+    for k in range(MAX_DIM + 1):
+        if k < len(diagrams):
+            _, landscape = persistence_landscape_1d(
+                diagrams[k],
+                n_layers=n_layers,
+                n_bins=n_bins,
+            )
+        else:
+            landscape = np.zeros((n_layers, n_bins))
 
-    betti_vector = np.concatenate(betti_vector).astype(np.float32)
+        landscape_features.append(landscape_stats(landscape))
 
-    # Persistence landscapes
-    landscape_vectors = []
-
-    for dgm in diagrams:
-        _, landscape = persistence_landscape_1d(
-            dgm,
-            n_layers=n_layers,
-            n_bins=n_bins,
-        )
-        landscape_vectors.append(landscape.flatten())
-
-    landscape_vector = np.concatenate(landscape_vectors).astype(np.float32)
+    landscape_vector = np.concatenate(landscape_features).astype(np.float32)
 
     return np.concatenate([
-        stats,
+        lifetime_stats,
         mid_life,
-        betti_vector,
         landscape_vector,
     ])
 
@@ -157,3 +151,12 @@ def persistence_landscape_1d(diagram, n_layers=3, n_bins=200, eps_min=None, eps_
     landscape = values_sorted[:n_layers]
 
     return eps, landscape
+
+def landscape_stats(landscape):
+    return np.array([
+        np.max(landscape),
+        np.mean(landscape),
+        np.std(landscape),
+        np.sum(landscape),
+        np.linalg.norm(landscape),
+    ], dtype=np.float32)

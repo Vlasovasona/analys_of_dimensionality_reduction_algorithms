@@ -100,6 +100,20 @@ services:
     networks:
       - airflow_net
 
+  webui:
+    image: nginx:alpine
+    ports:
+      - "8081:80"
+    volumes:
+      - ./webui:/usr/share/nginx/html
+      - ./webui/nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - webserver
+      - mlflow
+    networks:
+      - airflow_net
+    restart: always
+
 volumes:
   data:
   logs:

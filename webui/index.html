@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ML Pipeline Dashboard</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>ML Pipeline Dashboard</h1>
+            <div class="status-indicator">
+                <span class="status-dot" id="systemStatus"></span>
+                <span id="statusText">Система работает</span>
+            </div>
+        </header>
+
+        <!-- Main Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>Airflow</h3>
+                <div class="stat-value" id="airflowStatus">Проверка...</div>
+                <a href="http://localhost:8080" target="_blank" class="service-link">Открыть Airflow →</a>
+            </div>
+
+            <div class="stat-card">
+                <h3>MLflow</h3>
+                <div class="stat-value" id="mlflowStatus">Проверка...</div>
+                <a href="http://localhost:5050" target="_blank" class="service-link">Открыть MLflow →</a>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Статус DAG'ов</h2>
+            <div class="dags-grid" id="dagsContainer">
+                <div class="loading">Загрузка данных...</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Последние MLflow эксперименты</h2>
+            <div class="table-container">
+                <table id="mlflowTable">
+                    <thead>
+                        <tr>
+                            <th>Эксперимент</th>
+                            <th>Статус</th>
+                            <th>Метрика</th>
+                            <th>Время</th>
+                        </tr>
+                    </thead>
+                    <tbody id="mlflowBody">
+                        <tr>
+                            <td colspan="4" class="loading">Загрузка данных...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="section">
+            <h2>Быстрые действия</h2>
+            <div class="actions-grid">
+                <button class="btn" onclick="triggerDAG('training_pipeline')">
+                    Запустить пайплайн
+                </button>
+                <button class="btn" onclick="refreshData()">
+                    Обновить данные
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/main.js"></script>
+</body>
+</html>
