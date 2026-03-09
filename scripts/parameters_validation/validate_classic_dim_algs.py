@@ -10,9 +10,7 @@ def validate_dimensionality_config(
 
         Поддерживаемые алгоритмы:
         - pca
-        - tsne
         - umap
-        - TDA (В РАЗРАБОТКЕ)
 
         Args:
             dimensionally_alg_type (str):
@@ -22,7 +20,7 @@ def validate_dimensionality_config(
 
         Returns: None
     """
-    valid_algorithms = {"pca", "tsne", "umap", "TDA"}
+    valid_algorithms = {"pca", "umap"}
 
     if not dimensionally_alg_type or not dimensionally_alg_type.strip():
         raise ValueError("dimensionally_alg_type не может быть пустым")
@@ -41,15 +39,6 @@ def validate_dimensionality_config(
             raise ValueError("Для PCA требуется 'pca_components'")
         if not isinstance(dim_arg_hyperparams["pca_components"], (int, float)):
             raise ValueError("pca_components должен быть числом")
-
-    elif dimensionally_alg_type == "tsne":
-        required = {"n_components", "perplexity", "early_exaggeration", "learning_rate"}
-        missing = required - dim_arg_hyperparams.keys()
-        if missing:
-            missing_str = ", ".join(sorted(missing))
-            raise ValueError(
-                f"Для t-SNE отсутствуют параметры: {missing_str}"
-            )
 
     elif dimensionally_alg_type == "umap":
         required = {"n_neighbors", "min_dist", "n_components", "metric", "spread"}

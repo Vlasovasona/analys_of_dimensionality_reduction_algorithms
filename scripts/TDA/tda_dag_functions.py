@@ -2,7 +2,9 @@ from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 import os
 import pickle
 import logging
+import mlflow.sklearn
 import numpy as np
+from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from pathlib import Path
 from sklearn.model_selection import train_test_split
 from botocore.exceptions import ClientError, NoCredentialsError, EndpointConnectionError
@@ -22,10 +24,6 @@ def _compute_persistence_diagrams() -> None:
     считает диаграммы персистентности,
     сохраняет результат в S3 (.pkl).
     """
-    import os
-    import pickle
-    import numpy as np
-    from airflow.providers.amazon.aws.hooks.s3 import S3Hook
     from scripts.TDA.create_persistence_diagram_functions import compute_pd_for_multichannel_image
 
     s3 = S3Hook(aws_conn_id="s3")
@@ -197,8 +195,6 @@ def _train_TDA_models(
     """
     Универсальная функция обучения модели classic ML + TDA
     """
-    import mlflow
-    import mlflow.sklearn
 
     from sklearn.linear_model import LogisticRegression
     from sklearn.svm import SVC
