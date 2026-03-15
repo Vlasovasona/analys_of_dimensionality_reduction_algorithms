@@ -5,178 +5,162 @@ const config = {
     refreshInterval: 30000 // 30 секунд
 };
 
-// Состояние приложения
-let appState = {
-    airflowStatus: false,
-    mlflowStatus: false,
-    postgresStatus: false,
-    dags: [],
-    experiments: []
-};
+// Управление параметрами алгоритмов
+document.addEventListener('DOMContentLoaded', function() {
+    // PCA
+    const pcaCheckbox = document.getElementById('pcaCheckbox');
+    const pcaParameters = document.getElementById('pcaParameters');
+    const pcaInput = document.getElementById('pcaComponents');
 
-// Инициализация при загрузке страницы
-document.addEventListener('DOMContentLoaded', () => {
-    checkServices();
-    loadDAGs();
-    loadMLflowExperiments();
+    // UMAP
+    const umapCheckbox = document.getElementById('umapCheckbox');
+    const umapParameters = document.getElementById('umapParameters');
 
-    // Автоматическое обновление
-    setInterval(() => {
-        checkServices();
-        loadDAGs();
-        loadMLflowExperiments();
-    }, config.refreshInterval);
+    // Обработчики для PCA
+    if (pcaCheckbox && pcaParameters) {
+        pcaCheckbox.addEventListener('change', function(e) {
+            pcaParameters.style.display = this.checked ? 'block' : 'none';
+            if (pcaInput) pcaInput.disabled = this.checked;
+        });
+
+        if (pcaInput) {
+            setupNumericValidation(pcaInput, 1, 1000);
+        }
+    }
+
+    // Обработчики для UMAP
+    if (umapCheckbox && umapParameters) {
+        umapCheckbox.addEventListener('change', function(e) {
+            umapParameters.style.display = this.checked ? 'block' : 'none';
+
+            // Disable/Enable все поля UMAP
+            const inputs = umapParameters.querySelectorAll('input, select');
+            inputs.forEach(input => input.disabled = this.checked);
+        });
+
+        // Настройка валидации для числовых полей UMAP
+        setupUMAPValidation();
+    }
 });
 
-// Проверка статуса сервисов
-async function checkServices() {
-    // Проверка Airflow
-    try {
-        const airflowResponse = await fetch(`${config.airflowUrl}/api/v1/health`, {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json'
-            }
-        });
-        appState.airflowStatus = airflowResponse.ok;
-    } catch (error) {
-        appState.airflowStatus = false;
-    }
+// Функция для настройки валидации числовых полей
+function setupNumericValidation(input, min, max) {
+    input.addEventListener('input', function(e) {
+        let value = parseFloat(this.value);
 
-    // Проверка MLflow
-    try {
-        const mlflowResponse = await fetch(`${config.mlflowUrl}/api/2.0/mlflow/experiments/list`);
-        appState.mlflowStatus = mlflowResponse.ok;
-    } catch (error) {
-        appState.mlflowStatus = false;
-    }
-
-    // Проверка PostgreSQL (через API или просто индикация)
-    appState.postgresStatus = appState.airflowStatus; // Если Airflow работает, то и PostgreSQL скорее всего тоже
-
-    updateStatusIndicators();
-}
-
-// Обновление индикаторов статуса
-function updateStatusIndicators() {
-    // Общий статус системы
-    const systemStatus = document.getElementById('systemStatus');
-    const statusText = document.getElementById('statusText');
-
-    const allServicesOk = appState.airflowStatus && appState.mlflowStatus && appState.postgresStatus;
-
-    systemStatus.className = `status-dot ${allServicesOk ? 'active' : 'inactive'}`;
-    statusText.textContent = allServicesOk ? 'Все системы работают' : 'Некоторые сервисы недоступны';
-
-    // Статус отдельных сервисов
-    updateServiceStatus('airflowStatus', appState.airflowStatus);
-    updateServiceStatus('mlflowStatus', appState.mlflowStatus);
-    updateServiceStatus('postgresStatus', appState.postgresStatus);
-}
-
-function updateServiceStatus(elementId, isActive) {
-    const element = document.getElementById(elementId);
-    if (element) {
-        element.textContent = isActive ? 'Активен' : 'Недоступен';
-        element.className = `stat-value ${isActive ? 'success' : 'error'}`;
-    }
-}
-
-// Загрузка DAG'ов из Airflow
-async function loadDAGs() {
-    if (!appState.airflowStatus) {
-        document.getElementById('dagsContainer').innerHTML =
-            '<div class="error-message">Airflow недоступен</div>';
-        return;
-    }
-
-    try {
-        const response = await fetch(`${config.airflowUrl}/api/v1/dags`, {
-            headers: {
-                'Accept': 'application/json'
-            }
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            appState.dags = data.dags;
-            renderDAGs();
+        if (isNaN(value)) {
+            this.value = min;
+            return;
         }
-    } catch (error) {
-        console.error('Error loading DAGs:', error);
-    }
-}
 
-// Отрисовка DAG'ов
-function renderDAGs() {
-    const container = document.getElementById('dagsContainer');
+        if (value < min) this.value = min;
+        if (value > max) this.value = max;
+    });
 
-    if (appState.dags.length === 0) {
-        container.innerHTML = '<div class="loading">Нет доступных DAG\'ов</div>';
-        return;
-    }
-
-    container.innerHTML = appState.dags.map(dag => `
-        <div class="dag-card ${dag.is_paused ? 'paused' : 'running'}">
-            <div class="dag-name">${dag.dag_id}</div>
-            <div class="dag-status">${dag.is_paused ? 'Приостановлен' : 'Активен'}</div>
-            <div class="dag-meta">
-                <span>Схема: ${dag.schedule_interval || 'Нет'}</span>
-                <span>Теги: ${dag.tags?.map(t => t.name).join(', ') || 'нет'}</span>
-            </div>
-        </div>
-    `).join('');
-}
-
-// Загрузка экспериментов из MLflow
-async function loadMLflowExperiments() {
-    if (!appState.mlflowStatus) {
-        const tbody = document.getElementById('mlflowBody');
-        tbody.innerHTML = '<tr><td colspan="4" class="error-message">MLflow недоступен</td></tr>';
-        return;
-    }
-
-    try {
-        const response = await fetch(`${config.mlflowUrl}/api/2.0/mlflow/experiments/list`);
-
-        if (response.ok) {
-            const data = await response.json();
-            appState.experiments = data.experiments || [];
-            renderMLflowExperiments();
+    input.addEventListener('keydown', function(e) {
+        // Разрешаем специальные клавиши
+        if ([46, 8, 9, 27, 13, 37, 38, 39, 40].indexOf(e.keyCode) !== -1 ||
+            (e.keyCode === 65 && (e.ctrlKey === true || e.metaKey === true)) ||
+            (e.keyCode === 67 && (e.ctrlKey === true || e.metaKey === true)) ||
+            (e.keyCode === 86 && (e.ctrlKey === true || e.metaKey === true)) ||
+            (e.keyCode === 88 && (e.ctrlKey === true || e.metaKey === true))) {
+            return;
         }
-    } catch (error) {
-        console.error('Error loading MLflow experiments:', error);
+
+        // Запрещаем ввод не цифр
+        if ((e.shiftKey || (e.keyCode < 48 || e.keyCode > 57)) &&
+            (e.keyCode < 96 || e.keyCode > 105)) {
+            e.preventDefault();
+        }
+    });
+}
+
+// Настройка валидации для UMAP полей
+function setupUMAPValidation() {
+    // n_neighbors
+    const neighbors = document.getElementById('umapNeighbors');
+    if (neighbors) setupNumericValidation(neighbors, 2, 200);
+
+    // min_dist
+    const minDist = document.getElementById('umapMinDist');
+    if (minDist) {
+        minDist.addEventListener('input', function(e) {
+            let value = parseFloat(this.value);
+            if (isNaN(value)) {
+                this.value = 0.1;
+                return;
+            }
+            if (value < 0) this.value = 0;
+            if (value > 0.99) this.value = 0.99;
+            this.value = Math.round(this.value * 100) / 100;
+        });
+    }
+
+    // n_components
+    const components = document.getElementById('umapComponents');
+    if (components) setupNumericValidation(components, 1, 100);
+
+    // spread
+    const spread = document.getElementById('umapSpread');
+    if (spread) {
+        spread.addEventListener('input', function(e) {
+            let value = parseFloat(this.value);
+            if (isNaN(value)) {
+                this.value = 1.0;
+                return;
+            }
+            if (value < 0.5) this.value = 0.5;
+            if (value > 5.0) this.value = 5.0;
+            this.value = Math.round(this.value * 10) / 10;
+        });
     }
 }
 
-// Отрисовка MLflow экспериментов
-function renderMLflowExperiments() {
-    const tbody = document.getElementById('mlflowBody');
+// Функция для получения параметров UMAP
+function getUMAPParameters() {
+    const umapCheckbox = document.getElementById('umapCheckbox');
 
-    if (appState.experiments.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="loading">Нет экспериментов</td></tr>';
-        return;
+    if (!umapCheckbox || !umapCheckbox.checked) {
+        return { enabled: false };
     }
 
-    // Берем последние 5 экспериментов
-    const recentExperiments = appState.experiments.slice(0, 5);
-
-    tbody.innerHTML = recentExperiments.map(exp => `
-        <tr>
-            <td>${exp.name}</td>
-            <td><span class="status-dot ${exp.lifecycle_stage === 'active' ? 'active' : 'inactive'}" style="display: inline-block; margin-right: 0.5rem;"></span>${exp.lifecycle_stage}</td>
-            <td>${exp.artifact_location || 'Н/Д'}</td>
-            <td>${new Date(exp.creation_time).toLocaleString()}</td>
-        </tr>
-    `).join('');
+    return {
+        enabled: true,
+        n_neighbors: parseInt(document.getElementById('umapNeighbors')?.value || 15),
+        min_dist: parseFloat(document.getElementById('umapMinDist')?.value || 0.1),
+        n_components: parseInt(document.getElementById('umapComponents')?.value || 2),
+        metric: document.getElementById('umapMetric')?.value || 'euclidean',
+        spread: parseFloat(document.getElementById('umapSpread')?.value || 1.0),
+        low_memory: document.getElementById('umapLowMemory')?.value === 'true',
+        init: document.getElementById('umapInit')?.value || 'spectral'
+    };
 }
 
-// Запуск DAG
+// Функция для получения параметров PCA
+function getPCAParameters() {
+    const pcaCheckbox = document.getElementById('pcaCheckbox');
+
+    if (!pcaCheckbox || !pcaCheckbox.checked) {
+        return { enabled: false };
+    }
+
+    return {
+        enabled: true,
+        n_components: parseInt(document.getElementById('pcaComponents')?.value || 2)
+    };
+}
+
+// Функция для получения всех параметров
+function getAllParameters() {
+    return {
+        pca: getPCAParameters(),
+        umap: getUMAPParameters()
+    };
+}
+
+// Обновленная функция triggerDAG с поддержкой обоих алгоритмов
 async function triggerDAG(dagId) {
-    if (!appState.airflowStatus) {
-        alert('Airflow недоступен');
-        return;
-    }
+    const params = getAllParameters();
 
     try {
         const response = await fetch(`${config.airflowUrl}/api/v1/dags/${dagId}/dagRuns`, {
@@ -186,12 +170,12 @@ async function triggerDAG(dagId) {
                 'Accept': 'application/json'
             },
             body: JSON.stringify({
-                conf: {}
+                conf: params
             })
         });
 
         if (response.ok) {
-            alert(`DAG ${dagId} успешно запущен`);
+            alert(`DAG ${dagId} успешно запущен с выбранными параметрами`);
         } else {
             alert(`Ошибка при запуске DAG ${dagId}`);
         }
@@ -199,11 +183,4 @@ async function triggerDAG(dagId) {
         console.error('Error triggering DAG:', error);
         alert('Ошибка при запуске DAG');
     }
-}
-
-// Обновление данных
-function refreshData() {
-    checkServices();
-    loadDAGs();
-    loadMLflowExperiments();
 }
