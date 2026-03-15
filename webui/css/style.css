@@ -248,3 +248,132 @@ tr:hover {
     text-align: center;
     padding: 1rem;
 }
+
+/* Стили для алгоритмов */
+.algorithm-section {
+    margin-bottom: 1.5rem;
+    padding: 0.5rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    background: #f9fafb;
+}
+
+.algorithm-section:last-child {
+    margin-bottom: 0;
+}
+
+.algorithm-header {
+    padding: 0.5rem;
+    cursor: pointer;
+    user-select: none;
+}
+
+.algorithm-header:hover {
+    background: #f3f4f6;
+    border-radius: 0.375rem;
+}
+
+.algorithm-name {
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.algorithm-checkbox {
+    width: 1.2rem;
+    height: 1.2rem;
+    cursor: pointer;
+    accent-color: #3b82f6;
+}
+
+.algorithm-parameters {
+    margin-top: 0.75rem;
+    padding: 1rem;
+    background: white;
+    border-radius: 0.375rem;
+    border: 1px solid #e5e7eb;
+    animation: slideDown 0.3s ease;
+}
+
+.parameter-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.parameter-row:last-child {
+    margin-bottom: 0;
+}
+
+.parameter-label {
+    min-width: 120px;
+    font-size: 0.9rem;
+    color: #374151;
+    font-weight: 500;
+}
+
+.parameter-input, .parameter-select {
+    width: 200px;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 0.375rem;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+    background: white;
+}
+
+.parameter-input:focus, .parameter-select:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.parameter-input:hover, .parameter-select:hover {
+    border-color: #9ca3af;
+}
+
+.parameter-input:disabled, .parameter-select:disabled {
+    background-color: #f3f4f6;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.parameter-hint {
+    font-size: 0.8rem;
+    color: #6b7280;
+}
+
+.pca-components-row {
+    border-left: 2px solid #e5e7eb;
+    padding-left: 1rem;
+    margin-left: 1.8rem;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+
+@media (max-width: 768px) {
+    .parameter-row {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .parameter-label {
+        min-width: auto;
+    }
+
+    .parameter-input, .parameter-select {
+        width: 100%;
+    }
+}
+
