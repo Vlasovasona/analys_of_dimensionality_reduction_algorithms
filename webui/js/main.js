@@ -36,3 +36,14 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 });
+
+function refreshData() {
+    document.getElementById('pcaComponents').value = '';
+    document.getElementById('umapNeighbors').value = '';
+    document.getElementById('umapMinDist').value = '';
+    document.getElementById('umapComponents').value = '';
+    document.getElementById('umapMetric').value = '';
+    document.getElementById('umapSpread').value = '';
+    document.getElementById('umapLowMemory').value = '';
+    document.getElementById('umapInit').value = '';
+}
